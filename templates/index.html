@@ -1,80 +1,85 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta charset="UTF-8">
     <title>Smart Data Analyzer</title>
 
-    <!-- If you have static/css/style.css (as in your folder) -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 
 <body>
+<div class="container">
 
-    <h2>Smart Data Analyzer</h2>
+    <h1>📊 Smart Data Analyzer</h1>
+    <p class="subtitle">Upload a CSV file to clean, analyze & visualize data</p>
 
-    <form action="/upload" method="post" enctype="multipart/form-data">
-        <input type="file" name="file" required>
-        <br><br>
-        <button type="submit">Upload & Clean</button>
-    </form>
+    <div class="card">
+        <form action="/upload" method="post" enctype="multipart/form-data">
+            <input type="file" name="file" required>
+            <button type="submit">Upload & Analyze</button>
+        </form>
+    </div>
 
     {% if tables %}
-        <h3>Cleaned Data Preview</h3>
-        {{ tables|safe }}
-
-        <br><br>
+    <div class="card">
+        <h2>Cleaned Data Preview</h2>
+        {{ tables | safe }}
         <a href="{{ download_link }}">
-            <button type="button">Download Cleaned File</button>
+            <button class="secondary">Download Cleaned CSV</button>
         </a>
+    </div>
     {% endif %}
 
     {% if analysis %}
-        <h3>Data Cleaning Summary</h3>
-
+    <div class="card">
+        <h2>Data Cleaning Summary</h2>
         <table>
-            <tr>
-                <th></th>
-                <th>Before Cleaning</th>
-                <th>After Cleaning</th>
-            </tr>
-            <tr>
-                <td>Total Rows</td>
-                <td>{{ analysis.before.rows }}</td>
-                <td>{{ analysis.after.rows }}</td>
-            </tr>
-            <tr>
-                <td>Total Columns</td>
-                <td>{{ analysis.before.columns }}</td>
-                <td>{{ analysis.after.columns }}</td>
-            </tr>
-            <tr>
-                <td>Total Missing Values</td>
-                <td>{{ analysis.before.missing_total }}</td>
-                <td>{{ analysis.after.missing_total }}</td>
-            </tr>
+            <tr><th></th><th>Before</th><th>After</th></tr>
+            <tr><td>Rows</td><td>{{ analysis.before.rows }}</td><td>{{ analysis.after.rows }}</td></tr>
+            <tr><td>Columns</td><td>{{ analysis.before.columns }}</td><td>{{ analysis.after.columns }}</td></tr>
+            <tr><td>Missing Values</td><td>{{ analysis.before.missing_total }}</td><td>{{ analysis.after.missing_total }}</td></tr>
         </table>
+    </div>
 
-        <h4>Cleaning Impact</h4>
-        <ul>
-            <li><strong>Rows Removed:</strong> {{ analysis.impact.rows_removed }}</li>
-            <li><strong>Columns Removed:</strong> {{ analysis.impact.columns_removed }}</li>
-        </ul>
-
-        <h4>Missing Values by Column (After Cleaning)</h4>
+    <div class="card">
+        <h2>Missing Values by Column</h2>
         <table>
-            <tr>
-                <th>Column</th>
-                <th>Missing Count</th>
-            </tr>
+            <tr><th>Column</th><th>Missing</th></tr>
             {% for col, count in analysis.missing_by_column.items() %}
-            <tr>
-                <td>{{ col }}</td>
-                <td>{{ count }}</td>
-            </tr>
+            <tr><td>{{ col }}</td><td>{{ count }}</td></tr>
             {% endfor %}
         </table>
+    </div>
     {% endif %}
 
+    {% if analysis and analysis.chart %}
+    <div class="card">
+        <h2>{{ analysis.chart.title }}</h2>
+        <canvas id="barChart"></canvas>
+    </div>
+
+    <script>
+        const labels = {{ analysis.chart["labels"] | tojson }};
+        const values = {{ analysis.chart["values"] | tojson }};
+
+        new Chart(document.getElementById("barChart"), {
+            type: "bar",
+            data: {
+                labels: labels,
+                datasets: [{
+                    data: values,
+                    backgroundColor: "rgba(54,162,235,0.7)"
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: { legend: { display: false } }
+            }
+        });
+    </script>
+    {% endif %}
+
+</div>
 </body>
 </html>

@@ -1,54 +1,79 @@
-body {
-    font-family: Arial, sans-serif;
-    margin: 30px;
-    background-color: #f8f9fa;
+* {
+    box-sizing: border-box;
 }
 
-h2,
-h3 {
+body {
+    margin: 0;
+    background: #f4f6f9;
+    font-family: "Segoe UI", Arial, sans-serif;
     color: #333;
 }
 
-form {
-    margin-bottom: 20px;
+.container {
+    max-width: 1200px;
+    margin: auto;
+    padding: 30px;
+}
+
+h1 {
+    margin-bottom: 5px;
+}
+
+.subtitle {
+    color: #666;
+    margin-bottom: 25px;
+}
+
+.card {
+    background: #fff;
+    padding: 22px;
+    margin-bottom: 25px;
+    border-radius: 12px;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.06);
+}
+
+input[type="file"] {
+    margin-bottom: 12px;
 }
 
 button {
-    padding: 8px 14px;
+    padding: 10px 18px;
     border: none;
-    background-color: #007bff;
+    border-radius: 6px;
+    background: linear-gradient(135deg, #007bff, #0056d2);
     color: white;
     cursor: pointer;
-    border-radius: 4px;
+}
+
+button.secondary {
+    margin-top: 15px;
+    background: #28a745;
 }
 
 button:hover {
-    background-color: #0056b3;
+    opacity: 0.9;
 }
 
 table {
-    border-collapse: collapse;
     width: 100%;
-    margin-top: 10px;
-    background-color: white;
+    border-collapse: collapse;
+    margin-top: 12px;
 }
 
-table,
 th,
 td {
-    border: 1px solid #ccc;
+    padding: 10px;
+    border-bottom: 1px solid #ddd;
 }
 
 th {
-    background-color: #e9ecef;
+    background: #f1f3f6;
 }
 
-th,
-td {
-    padding: 8px;
-    text-align: left;
+tr:nth-child(even) td {
+    background: #fafafa;
 }
 
-ul {
+canvas {
     margin-top: 10px;
 }
