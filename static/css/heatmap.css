@@ -1,0 +1,54 @@
+/* Heatmap specific styles matching the glass theme */
+.heatmap-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 4px;
+    /* Space between cells */
+    margin-top: 10px;
+    font-size: 0.9rem;
+}
+
+.heatmap-table th {
+    text-align: center;
+    padding: 8px;
+    color: #94a3b8;
+    font-weight: 500;
+    font-size: 0.85rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 150px;
+}
+
+.heatmap-table td {
+    border-radius: 6px;
+    text-align: center;
+    padding: 12px 8px;
+    font-weight: 600;
+    font-size: 0.85rem;
+    transition: transform 0.2s, box-shadow 0.2s;
+    cursor: default;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.heatmap-table td:hover {
+    transform: scale(1.1);
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+    z-index: 2;
+    position: relative;
+    border-color: rgba(255, 255, 255, 0.3);
+}
+
+/* Ensure Row Headers are aligned right */
+.heatmap-table tbody th {
+    text-align: right;
+    padding-right: 15px;
+}
+
+/* Responsive tweaks */
+@media (max-width: 600px) {
+    .heatmap-table td {
+        padding: 8px 4px;
+        font-size: 0.75rem;
+    }
+}

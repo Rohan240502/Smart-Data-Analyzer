@@ -1,85 +1,459 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Smart Data Analyzer</title>
 
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- CSS -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/heatmap.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/insights.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/prediction.css') }}">
+    <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 
 <body>
-<div class="container">
+    <!-- (Previous Content) -->
 
-    <h1>📊 Smart Data Analyzer</h1>
-    <p class="subtitle">Upload a CSV file to clean, analyze & visualize data</p>
+    <!-- ... INSIGHTS CARD ... -->
 
-    <div class="card">
-        <form action="/upload" method="post" enctype="multipart/form-data">
-            <input type="file" name="file" required>
-            <button type="submit">Upload & Analyze</button>
-        </form>
-    </div>
+    {% if analysis and analysis.columns %}
+    <div class="card predict-card slide-up delay-2">
+        <div class="card-header">
+            <i class="fa-solid fa-wand-magic-sparkles" style="color: #0ea5e9;"></i>
+            <h2>AI Auto-Predictor</h2>
+        </div>
 
-    {% if tables %}
-    <div class="card">
-        <h2>Cleaned Data Preview</h2>
-        {{ tables | safe }}
-        <a href="{{ download_link }}">
-            <button class="secondary">Download Cleaned CSV</button>
-        </a>
-    </div>
-    {% endif %}
+        <div class="predict-form">
+            <label style="color: #cbd5e1;">I want to predict:</label>
+            <select id="targetSelect" class="predict-select">
+                {% for col in analysis.columns %}
+                <option value="{{ col }}">{{ col }}</option>
+                {% endfor %}
+            </select>
+            <button id="trainBtn" class="predict-btn">
+                <i class="fa-solid fa-robot"></i> Train Model
+            </button>
+            <div id="predictLoader" class="loading-spinner">
+                <i class="fa-solid fa-circle-notch fa-spin"></i>
+            </div>
+        </div>
 
-    {% if analysis %}
-    <div class="card">
-        <h2>Data Cleaning Summary</h2>
-        <table>
-            <tr><th></th><th>Before</th><th>After</th></tr>
-            <tr><td>Rows</td><td>{{ analysis.before.rows }}</td><td>{{ analysis.after.rows }}</td></tr>
-            <tr><td>Columns</td><td>{{ analysis.before.columns }}</td><td>{{ analysis.after.columns }}</td></tr>
-            <tr><td>Missing Values</td><td>{{ analysis.before.missing_total }}</td><td>{{ analysis.after.missing_total }}</td></tr>
-        </table>
-    </div>
-
-    <div class="card">
-        <h2>Missing Values by Column</h2>
-        <table>
-            <tr><th>Column</th><th>Missing</th></tr>
-            {% for col, count in analysis.missing_by_column.items() %}
-            <tr><td>{{ col }}</td><td>{{ count }}</td></tr>
-            {% endfor %}
-        </table>
+        <div id="predictResults" class="predict-results">
+            <div style="text-align: center;">
+                <span id="modelAccuracy" class="accuracy-badge">Accuracy: 85%</span>
+            </div>
+            <h4 style="margin-bottom: 15px; color: #cbd5e1; font-size: 0.9rem;">Top Drivers (Feature Importance):</h4>
+            <div id="featureList" class="feature-list">
+                <!-- Features will be injected here -->
+            </div>
+        </div>
     </div>
     {% endif %}
 
-    {% if analysis and analysis.chart %}
-    <div class="card">
-        <h2>{{ analysis.chart.title }}</h2>
-        <canvas id="barChart"></canvas>
-    </div>
+    <!-- ... HEATMAP & CHART CONTENT ... -->
 
+    <!-- (Existing Script) -->
     <script>
-        const labels = {{ analysis.chart["labels"] | tojson }};
-        const values = {{ analysis.chart["values"] | tojson }};
+        // ... (Existing Chart/Download Logic) ...
 
-        new Chart(document.getElementById("barChart"), {
-            type: "bar",
-            data: {
-                labels: labels,
-                datasets: [{
-                    data: values,
-                    backgroundColor: "rgba(54,162,235,0.7)"
-                }]
-            },
-            options: {
-                responsive: true,
-                plugins: { legend: { display: false } }
-            }
-        });
+        // Prediction Logic
+        const trainBtn = document.getElementById('trainBtn');
+        if (trainBtn) {
+            trainBtn.addEventListener('click', function () {
+                const target = document.getElementById('targetSelect').value;
+                const loader = document.getElementById('predictLoader');
+                const results = document.getElementById('predictResults');
+
+                // UI State: Loading
+                trainBtn.disabled = true;
+                trainBtn.innerHTML = '<i class="fa-solid fa-hourglass"></i> Thinking...';
+                loader.style.display = 'inline-block';
+                results.style.display = 'none';
+
+                // Send Request
+                const formData = new FormData();
+                formData.append('target', target);
+
+                fetch('/predict', {
+                    method: 'POST',
+                    body: formData
+                })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.error) {
+                            alert('Error: ' + data.error);
+                            return;
+                        }
+
+                        // Update Results
+                        document.getElementById('modelAccuracy').textContent = `Model Accuracy: ${data.accuracy}`;
+
+                        const list = document.getElementById('featureList');
+                        list.innerHTML = ''; // Clear prev
+
+                        data.features.forEach(f => {
+                            const width = f.importance > 5 ? f.importance : 5; // Min width
+                            const html = `
+                            <div class="feature-item">
+                                <span class="feature-name" title="${f.name}">${f.name}</span>
+                                <div class="feature-bar-container">
+                                    <div class="feature-bar" style="width: ${width}%"></div>
+                                </div>
+                                <span class="feature-val">${f.importance}%</span>
+                            </div>
+                        `;
+                            list.insertAdjacentHTML('beforeend', html);
+                        });
+
+                        // Show Results
+                        results.style.display = 'block';
+                    })
+                    .catch(err => {
+                        console.error(err);
+                        alert('Something went wrong. Check console.');
+                    })
+                    .finally(() => {
+                        // Reset UI
+                        trainBtn.disabled = false;
+                        trainBtn.innerHTML = '<i class="fa-solid fa-robot"></i> Train Model';
+                        loader.style.display = 'none';
+                    });
+            });
+        }
     </script>
-    {% endif %}
 
-</div>
-</body>
+    <body>
+        <div class="background-globes">
+            <div class="globe globe-1"></div>
+            <div class="globe globe-2"></div>
+            <div class="globe globe-3"></div>
+        </div>
+
+        <div class="container fade-in">
+
+            <header class="header">
+                <div class="logo">
+                    <i class="fa-solid fa-chart-simple"></i>
+                    <h1>Smart Data Analyzer</h1>
+                </div>
+                <p class="subtitle">Transform your raw CSV data into actionable insights instantly.</p>
+            </header>
+
+            <div class="card upload-card bounce-in">
+                <div class="card-header">
+                    <i class="fa-solid fa-cloud-arrow-up"></i>
+                    <h2>Upload Dataset</h2>
+                </div>
+                <form action="/upload" method="post" enctype="multipart/form-data" class="upload-form">
+                    <div class="file-input-wrapper">
+                        <input type="file" name="file" id="file" class="file-input" required>
+                        <label for="file" class="file-label">
+                            <i class="fa-solid fa-file-csv"></i>
+                            <span id="file-name-display">Choose a CSV file...</span>
+                        </label>
+                    </div>
+                    <button type="submit" class="btn-primary">
+                        Analyze Now <i class="fa-solid fa-bolt"></i>
+                    </button>
+                </form>
+
+                <script>
+                    document.getElementById('file').addEventListener('change', function (e) {
+                        if (e.target.files.length > 0) {
+                            document.getElementById('file-name-display').textContent = e.target.files[0].name;
+                            // Add a nice color change to indicate success
+                            document.querySelector('.file-label i').className = 'fa-solid fa-check';
+                            document.querySelector('.file-label').style.color = '#38bdf8';
+                        }
+                    });
+                </script>
+            </div>
+
+            {% if tables %}
+            <div class="card results-card slide-up">
+                <div class="card-header">
+                    <i class="fa-solid fa-table-cells"></i>
+                    <h2>Cleaned Data Preview</h2>
+                </div>
+                <div class="table-responsive">
+                    {{ tables | safe }}
+                </div>
+                <div class="actions">
+                    <a href="{{ download_link }}" class="btn-download">
+                        <i class="fa-solid fa-download"></i> Download Cleaned CSV
+                    </a>
+                </div>
+            </div>
+            {% endif %}
+
+            {% if analysis %}
+            <div class="grid-container">
+                <div class="card summary-card slide-up delay-1">
+                    <div class="card-header">
+                        <i class="fa-solid fa-wand-magic-sparkles"></i>
+                        <h2>Cleaning Summary</h2>
+                    </div>
+                    <table class="styled-table">
+                        <thead>
+                            <tr>
+                                <th>Metric</th>
+                                <th>Before</th>
+                                <th>After</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><i class="fa-solid fa-layer-group"></i> Rows</td>
+                                <td>{{ analysis.before.rows }}</td>
+                                <td>{{ analysis.after.rows }}</td>
+                            </tr>
+                            <tr>
+                                <td><i class="fa-solid fa-table-columns"></i> Columns</td>
+                                <td>{{ analysis.before.columns }}</td>
+                                <td>{{ analysis.after.columns }}</td>
+                            </tr>
+                            <tr>
+                                <td><i class="fa-solid fa-triangle-exclamation"></i> Missing Values</td>
+                                <td>{{ analysis.before.missing_total }}</td>
+                                <td>{{ analysis.after.missing_total }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="card missing-card slide-up delay-2">
+                    <div class="card-header">
+                        <i class="fa-solid fa-magnifying-glass-chart"></i>
+                        <h2>Missing Values</h2>
+                    </div>
+                    <div class="table-wrapper">
+                        <table class="styled-table">
+                            <thead>
+                                <tr>
+                                    <th>Column</th>
+                                    <th>Missing Count</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for col, count in analysis.missing_by_column.items() %}
+                                {% if count > 0 %}
+                                <tr>
+                                    <td>{{ col }}</td>
+                                    <td class="negative">{{ count }}</td>
+                                </tr>
+                                {% else %}
+                                <tr>
+                                    <td>{{ col }}</td>
+                                    <td class="positive"><i class="fa-solid fa-check"></i> 0</td>
+                                </tr>
+                                {% endif %}
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+            {% if analysis and analysis.insights %}
+            <div class="card insights-card bounce-in">
+                <div class="card-header">
+                    <i class="fa-solid fa-brain" style="color: #a855f7;"></i>
+                    <h2>Smart AI Insights</h2>
+                </div>
+                <div class="insights-grid">
+                    {% for insight in analysis.insights %}
+                    <div class="insight-item">
+                        <div class="insight-icon {{ insight.color }}">
+                            <i class="fa-solid {{ insight.icon }}"></i>
+                        </div>
+                        <div class="insight-text">
+                            {{ insight.text | safe }}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
+            {% if analysis and analysis.heatmap %}
+            <div class="card heatmap-card slide-up delay-4">
+                <div class="card-header">
+                    <i class="fa-solid fa-fire"></i>
+                    <h2>Correlation Heatmap</h2>
+                </div>
+                <div style="overflow-x: auto; padding-bottom: 10px;">
+                    <table class="heatmap-table">
+                        <thead>
+                            <tr>
+                                <th></th>
+                                {% for col in analysis.heatmap.columns %}
+                                <th title="{{ col }}">{{ col }}</th>
+                                {% endfor %}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in analysis.heatmap.data %}
+                            <tr>
+                                <th title="{{ analysis.heatmap.columns[loop.index0] }}">{{
+                                    analysis.heatmap.columns[loop.index0] }}</th>
+                                {% for val in row %}
+                                {# Calculate opacity based on absolute correlation value. Minimum 0.1 for visibility #}
+                                {% set opacity = val | abs %}
+                                {% if opacity < 0.1 %}{% set opacity=0.1 %}{% endif %} {# Determine color:
+                                    Positive=Blue/Purple, Negative=Red/Orange #} {% if val>= 0 %}
+                                    {% set color_var = '99, 102, 241' %} {# Indigo #}
+                                    {% else %}
+                                    {% set color_var = '244, 63, 94' %} {# Rose #}
+                                    {% endif %}
+
+                                    <td style="background-color: rgba({{ color_var }}, {{ opacity }}); color: {% if opacity > 0.5 %}white{% else %}#e2e8f0{% endif %};"
+                                        title="Correlation: {{ val }}">
+                                        {{ val }}
+                                    </td>
+                                    {% endfor %}
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            {% endif %}
+
+            {% if analysis and analysis.charts %}
+            <div class="grid-container charts-section">
+                {% for chart in analysis.charts %}
+                <div class="card chart-card slide-up delay-3"
+                    style="{% if chart.grid == 'full' %}grid-column: 1 / -1;{% endif %} position: relative;">
+                    <div class="card-header" style="justify-content: space-between;">
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <i class="fa-solid fa-chart-pie"></i>
+                            <h2>{{ chart.title }}</h2>
+                        </div>
+                        <button class="download-btn" data-id="{{ chart.id }}" data-title="{{ chart.title }}"
+                            style="background: none; border: none; color: #94a3b8; cursor: pointer; font-size: 1.2rem; transition: color 0.3s;"
+                            title="Download Chart">
+                            <i class="fa-solid fa-download"></i>
+                        </button>
+                    </div>
+                    <div class="chart-container">
+                        <canvas id="{{ chart.id }}"></canvas>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+
+            <script>
+                {% for chart in analysis.charts %}
+                (function () {
+                    const ctx = document.getElementById("{{ chart.id }}").getContext('2d');
+                    const type = "{{ chart.type }}";
+                    const labels = {{ chart.labels | tojson
+                }};
+                const data = {{ chart.data | tojson }};
+
+                let backgroundColors, borderColors;
+                let gradient = ctx.createLinearGradient(0, 0, 0, 400);
+
+                if ("{{ chart.color }}" === "gradient") {
+                    gradient.addColorStop(0, 'rgba(99, 102, 241, 0.8)');
+                    gradient.addColorStop(1, 'rgba(168, 85, 247, 0.4)');
+                    backgroundColors = gradient;
+                    borderColors = '#6366f1';
+                } else if ("{{ chart.color }}" === "multi") {
+                    backgroundColors = [
+                        '#6366f1', '#a855f7', '#ec4899', '#3b82f6', '#14b8a6',
+                        '#f59e0b', '#ef4444', '#8b5cf6', '#10b981', '#06b6d4'
+                    ];
+                    borderColors = 'transparent';
+                } else {
+                    gradient.addColorStop(0, 'rgba(56, 189, 248, 0.6)');
+                    gradient.addColorStop(1, 'rgba(14, 165, 233, 0.1)');
+                    backgroundColors = gradient;
+                    borderColors = '#38bdf8';
+                }
+
+                new Chart(ctx, {
+                    type: type,
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: 'Values',
+                            data: data,
+                            backgroundColor: backgroundColors,
+                            borderColor: borderColors,
+                            borderWidth: 1,
+                            borderRadius: 6,
+                            fill: true,
+                            tension: 0.4,
+                            pointBackgroundColor: borderColors
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                display: type === 'doughnut',
+                                labels: { color: '#94a3b8', font: { family: 'Outfit' } }
+                            },
+                            tooltip: {
+                                backgroundColor: 'rgba(15, 23, 42, 0.9)',
+                                titleColor: '#f8fafc',
+                                bodyColor: '#cbd5e1',
+                                padding: 12,
+                                titleFont: { family: 'Outfit', size: 14 },
+                                bodyFont: { family: 'Outfit', size: 13 },
+                                borderColor: 'rgba(255,255,255,0.1)',
+                                borderWidth: 1
+                            }
+                        },
+                        scales: type === 'doughnut' ? {} : {
+                            y: {
+                                beginAtZero: true,
+                                grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                                ticks: { color: '#94a3b8', font: { family: 'Outfit' } }
+                            },
+                            x: {
+                                grid: { display: false },
+                                ticks: { color: '#94a3b8', font: { family: 'Outfit' } }
+                            }
+                        }
+                    }
+                });
+            }) ();
+                {% endfor %}
+
+                // Event delegation for download buttons
+                document.addEventListener('click', function (e) {
+                    const btn = e.target.closest('.download-btn');
+                    if (btn) {
+                        const canvasId = btn.getAttribute('data-id');
+                        const title = btn.getAttribute('data-title');
+                        const canvas = document.getElementById(canvasId);
+
+                        if (canvas) {
+                            const link = document.createElement('a');
+                            link.download = title.replace(/ /g, '_') + '.png';
+                            link.href = canvas.toDataURL('image/png');
+                            document.body.appendChild(link);
+                            link.click();
+                            document.body.removeChild(link);
+                        }
+                    }
+                });
+            </script>
+            {% endif %}
+
+        </div>
+    </body>
+
 </html>
