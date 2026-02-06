@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Smart Data Analyzer</title>
+
+    <!-- Fonts -->
+    <link
+      href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <!-- Icons -->
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+    />
+    <!-- CSS -->
+    <link rel="stylesheet" href="css/style.css" />
+    <link rel="stylesheet" href="css/heatmap.css" />
+    <link rel="stylesheet" href="css/insights.css" />
+    <link rel="stylesheet" href="css/prediction.css" />
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  </head>
+
+  <body>
+    <div class="background-globes">
+      <div class="globe globe-1"></div>
+      <div class="globe globe-2"></div>
+      <div class="globe globe-3"></div>
+    </div>
+
+    <div class="container fade-in">
+      <header class="header">
+        <div class="logo">
+          <i class="fa-solid fa-chart-simple"></i>
+          <h1>Smart Data Analyzer</h1>
+        </div>
+        <p class="subtitle">
+          Transform your raw CSV data into actionable insights instantly.
+        </p>
+      </header>
+
+      <!-- UPLOAD SECTION -->
+      <div class="card upload-card bounce-in">
+        <div class="card-header">
+          <i class="fa-solid fa-cloud-arrow-up"></i>
+          <h2>Upload Dataset</h2>
+        </div>
+        <form id="uploadForm" class="upload-form">
+          <div class="file-input-wrapper">
+            <input
+              type="file"
+              name="file"
+              id="file"
+              class="file-input"
+              required
+              accept=".csv"
+            />
+            <label for="file" class="file-label">
+              <i class="fa-solid fa-file-csv"></i>
+              <span id="file-name-display">Choose a CSV file...</span>
+            </label>
+          </div>
+          <button type="submit" id="analyzeBtn" class="btn-primary">
+            Analyze Now <i class="fa-solid fa-bolt"></i>
+          </button>
+        </form>
+        <div
+          id="uploadLoader"
+          class="loading-spinner"
+          style="display: none; text-align: center; margin-top: 15px"
+        >
+          <i
+            class="fa-solid fa-circle-notch fa-spin fa-2x"
+            style="color: #38bdf8"
+          ></i>
+          <p style="color: #94a3b8; margin-top: 5px">crunching your data...</p>
+        </div>
+      </div>
+
+      <!-- DYNAMIC CONTENT CONTAINER -->
+      <div id="dashboard" style="display: none">
+        <!-- 1. SUMMARY STATS -->
+        <div class="grid-container">
+          <div class="card summary-card slide-up delay-1">
+            <div class="card-header">
+              <i class="fa-solid fa-wand-magic-sparkles"></i>
+              <h2>Cleaning Summary</h2>
+            </div>
+            <table class="styled-table" id="summaryTable">
+              <thead>
+                <tr>
+                  <th>Metric</th>
+                  <th>Before</th>
+                  <th>After</th>
+                </tr>
+              </thead>
+              <tbody>
+                <!-- Populated by JS -->
+              </tbody>
+            </table>
+          </div>
+
+          <div class="card missing-card slide-up delay-2">
+            <div class="card-header">
+              <i class="fa-solid fa-magnifying-glass-chart"></i>
+              <h2>Missing Values</h2>
+            </div>
+            <div class="table-wrapper">
+              <table class="styled-table" id="missingTable">
+                <thead>
+                  <tr>
+                    <th>Column</th>
+                    <th>Missing Count</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <!-- Populated by JS -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2. SMART INSIGHTS -->
+        <div class="card insights-card bounce-in" id="insightsCard">
+          <div class="card-header">
+            <i class="fa-solid fa-brain" style="color: #a855f7"></i>
+            <h2>Smart AI Insights</h2>
+          </div>
+          <div class="insights-grid" id="insightsGrid">
+            <!-- Populated by JS -->
+          </div>
+        </div>
+
+        <!-- 3. PREDICTOR -->
+        <div class="card predict-card slide-up delay-2" id="predictCard">
+          <div class="card-header">
+            <i
+              class="fa-solid fa-wand-magic-sparkles"
+              style="color: #0ea5e9"
+            ></i>
+            <h2>AI Auto-Predictor</h2>
+          </div>
+
+          <div class="predict-form">
+            <label style="color: #cbd5e1">I want to predict:</label>
+            <select id="targetSelect" class="predict-select">
+              <!-- Populated by JS -->
+            </select>
+            <button id="trainBtn" class="predict-btn">
+              <i class="fa-solid fa-robot"></i> Train Model
+            </button>
+            <div
+              id="predictLoader"
+              class="loading-spinner"
+              style="display: none"
+            >
+              <i class="fa-solid fa-circle-notch fa-spin"></i>
+            </div>
+          </div>
+
+          <div
+            id="predictResults"
+            class="predict-results"
+            style="display: none"
+          >
+            <div style="text-align: center">
+              <span id="modelAccuracy" class="accuracy-badge"></span>
+            </div>
+
+            <div style="margin: 20px 0">
+              <h4
+                style="margin-bottom: 15px; color: #cbd5e1; font-size: 0.9rem"
+              >
+                Actual vs Predicted Values:
+              </h4>
+              <div class="chart-container" style="height: 300px">
+                <canvas id="predictionChart"></canvas>
+              </div>
+            </div>
+
+            <h4 style="margin-bottom: 15px; color: #cbd5e1; font-size: 0.9rem">
+              Top Drivers (Feature Importance):
+            </h4>
+            <div id="featureList" class="feature-list"></div>
+          </div>
+        </div>
+
+        <!-- 4. CHARTS -->
+        <div class="grid-container charts-section" id="chartsContainer">
+          <!-- Populated by JS -->
+        </div>
+
+        <!-- 5. HEATMAP -->
+        <div class="card heatmap-card slide-up delay-4" id="heatmapCard">
+          <div class="card-header">
+            <i class="fa-solid fa-fire"></i>
+            <h2>Correlation Heatmap</h2>
+          </div>
+          <div style="overflow-x: auto; padding-bottom: 10px">
+            <table class="heatmap-table" id="heatmapTable">
+              <!-- Populated by JS -->
+            </table>
+          </div>
+        </div>
+
+        <!-- DOWNLOAD -->
+        <div class="card results-card slide-up" style="text-align: center">
+          <a id="downloadLink" href="#" class="btn-download">
+            <i class="fa-solid fa-download"></i> Download Cleaned CSV
+          </a>
+        </div>
+      </div>
+    </div>
+
+    <!-- MAIN LOGIC -->
+    <script src="js/script.js"></script>
+  </body>
+</html>

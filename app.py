@@ -12,8 +12,10 @@ import matplotlib
 matplotlib.use('Agg') # Use non-interactive backend
 import matplotlib.pyplot as plt
 import seaborn as sns
+from flask_cors import CORS
 
 app = Flask(__name__)
+CORS(app) # Enable CORS for all routes
 
 UPLOAD_FOLDER = "uploads"
 PROCESSED_FOLDER = "processed"
@@ -269,7 +271,7 @@ def generate_insights(df, num_cols, cat_cols, corr_matrix):
 # -----------------------------
 @app.route("/")
 def home():
-    return render_template("index.html")
+    return jsonify({"status": "Smart Data Analyzer API is running!", "version": "2.0"})
 
 
 @app.route("/upload", methods=["POST"])
@@ -315,13 +317,14 @@ def upload():
         cleaned_path = os.path.join(app.config["PROCESSED_FOLDER"], "cleaned_data.csv")
         cleaned_df.to_csv(cleaned_path, index=False)
 
-        return render_template("index.html", analysis=analysis)
+        # Return JSON instead of Render Template
+        return jsonify(analysis)
 
     except Exception as e:
         print(f"❌ ERROR in /upload: {e}")
         import traceback
         traceback.print_exc()
-        return f"Internal Server Error: {str(e)}", 500
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/download")
