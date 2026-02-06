@@ -2,6 +2,17 @@ from flask import Flask, render_template, request, send_file, jsonify
 import pandas as pd
 import os
 
+from reportlab.lib.pagesizes import letter, A4
+from reportlab.pdfgen import canvas
+from reportlab.lib import colors
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image as ReportLabImage
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from io import BytesIO
+import matplotlib
+matplotlib.use('Agg') # Use non-interactive backend
+import matplotlib.pyplot as plt
+import seaborn as sns
+
 app = Flask(__name__)
 
 UPLOAD_FOLDER = "uploads"
@@ -15,6 +26,8 @@ app.config["PROCESSED_FOLDER"] = PROCESSED_FOLDER
 
 # Global variable to store uploaded dataframe
 df = None
+# Global variable to store latest prediction for the report
+latest_prediction = None
 
 
 # -----------------------------
@@ -414,6 +427,15 @@ def predict():
                 "predicted": float(y_pred[i]),
                 "label": label
             })
+
+        # Store latest prediction globally for report
+        global latest_prediction
+        latest_prediction = {
+            "model_type": model_type,
+            "accuracy": score_text,
+            "features": features,
+            "target": target
+        }
 
         return jsonify({
             "model_type": model_type,
