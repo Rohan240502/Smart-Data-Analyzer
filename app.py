@@ -308,47 +308,53 @@ def upload():
         filepath = os.path.join(app.config["UPLOAD_FOLDER"], file.filename)
         file.save(filepath)
 
-        # Read the CSV (with encoding fallback)
+        # ⚡ MEMORY-SAFE LOADING: Check file size first
+        file_size_mb = os.path.getsize(filepath) / (1024 * 1024)
+        
         try:
-            original_df = pd.read_csv(filepath)
-        except UnicodeDecodeError:
-            original_df = pd.read_csv(filepath, encoding='latin1')
+            # If file > 10MB, only read a chunk to stay within 512MB RAM limit
+            if file_size_mb > 10:
+                print(f"📦 Large file ({file_size_mb:.1f}MB). Reading first 30k rows for stability.")
+                original_df = pd.read_csv(filepath, nrows=30000)
+            else:
+                try:
+                    original_df = pd.read_csv(filepath)
+                except UnicodeDecodeError:
+                    original_df = pd.read_csv(filepath, encoding='latin1')
+        except Exception as e:
+            return jsonify({"error": f"Failed to read CSV: {str(e)}"}), 400
         
-        # ⚡ OPTIMIZATION: Smart Sampling for Large Datasets
-        if len(original_df) > 20000:
-            sample_df = original_df.sample(n=20000, random_state=42)
-        else:
-            sample_df = original_df
-
-        # Clean the (sampled) data
-        cleaned_dashboard_df = clean_data(sample_df)
+        # Clean and Analyze
+        cleaned_dashboard_df = clean_data(original_df)
         
-        # Store full cleaned version for prediction
-        df = clean_data(original_df)
+        # Store for AI (capped at 30k for RAM safety on Free Tier)
+        df = cleaned_dashboard_df 
         
         # Generate Analysis
-        analysis = analyze_data(sample_df, cleaned_dashboard_df)
+        analysis = analyze_data(original_df, cleaned_dashboard_df)
 
-        # JSON Safety: Replace NaN/Inf with None (which becomes null in JSON)
+        # JSON Safety: Replace NaN/Inf with None
         def clean_nans(obj):
-            if isinstance(obj, dict):
+            if isinstance(obj, (float, int)):
+                if pd.isna(obj) or obj == float('inf') or obj == float('-inf'):
+                    return None
+            elif isinstance(obj, dict):
                 return {k: clean_nans(v) for k, v in obj.items()}
             elif isinstance(obj, list):
                 return [clean_nans(v) for v in obj]
-            elif isinstance(obj, float):
-                if pd.isna(obj) or obj == float('inf') or obj == float('-inf'):
-                    return None
             return obj
 
-        analysis = clean_nans(analysis)
-
-        return jsonify(analysis)
+        safe_analysis = clean_nans(analysis)
+        return jsonify(safe_analysis)
 
     except Exception as e:
-        print(f"❌ ERROR in /upload: {e}")
         import traceback
-        traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+        error_msg = traceback.format_exc()
+        print(f"⛔ CRITICAL ERROR:\n{error_msg}")
+        return jsonify({
+            "error": "Server encountered an error while processing data.",
+            "details": str(e)
+        }), 500
 
 
 @app.route("/download")
