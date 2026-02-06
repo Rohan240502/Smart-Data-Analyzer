@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, send_file
+from flask import Flask, render_template, request, send_file, jsonify
 import pandas as pd
 import os
 
@@ -12,6 +12,9 @@ os.makedirs(PROCESSED_FOLDER, exist_ok=True)
 
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 app.config["PROCESSED_FOLDER"] = PROCESSED_FOLDER
+
+# Global variable to store uploaded dataframe
+df = None
 
 
 # -----------------------------
@@ -258,6 +261,8 @@ def home():
 
 @app.route("/upload", methods=["POST"])
 def upload():
+    global df  # Declare df as global
+    
     if "file" not in request.files:
         return "No file uploaded"
 
@@ -271,9 +276,14 @@ def upload():
     filepath = os.path.join(app.config["UPLOAD_FOLDER"], file.filename)
     file.save(filepath)
 
-    df = pd.read_csv(filepath)
-    cleaned_df = clean_data(df)
-    analysis = analyze_data(df, cleaned_df)
+    original_df = pd.read_csv(filepath)
+    cleaned_df = clean_data(original_df)
+    
+    # Store cleaned dataframe globally for prediction
+    df = cleaned_df
+    
+    analysis = analyze_data(original_df, cleaned_df)
+
 
     cleaned_path = os.path.join(app.config["PROCESSED_FOLDER"], "cleaned_data.csv")
     cleaned_df.to_csv(cleaned_path, index=False)
@@ -302,15 +312,15 @@ def download():
 # -----------------------------
 # ML Imports (Safe Import)
 # -----------------------------
-# try:
-#     from sklearn.model_selection import train_test_split
-#     from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
-#     from sklearn.metrics import r2_score, accuracy_score
-#     from sklearn.preprocessing import LabelEncoder
-#     SKLEARN_AVAILABLE = True
-# except Exception as e:
-SKLEARN_AVAILABLE = False
-#     print(f"WARNING: scikit-learn import failed: {e}. Predictive features disabled.")
+try:
+    from sklearn.model_selection import train_test_split
+    from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
+    from sklearn.metrics import r2_score, accuracy_score
+    from sklearn.preprocessing import LabelEncoder
+    SKLEARN_AVAILABLE = True
+except Exception as e:
+    SKLEARN_AVAILABLE = False
+    print(f"WARNING: scikit-learn import failed: {e}. Predictive features disabled.")
 
 # ... (Existing Routes) ...
 
@@ -377,10 +387,40 @@ def predict():
                 "importance": round(importances[i] * 100, 1)
             })
 
+        # 6. Generate Predictions (first 20 test samples for visualization)
+        y_pred = model.predict(X_test)
+        predictions = []
+        sample_size = min(20, len(y_test))  # Show max 20 points
+        
+        for i in range(sample_size):
+            # Try to get a meaningful label (date from original data)
+            try:
+                idx = y_test.index[i]
+                # Try to find a date column in the original dataframe
+                if 'from_date' in df.columns:
+                    label = str(df.loc[idx, 'from_date'])
+                elif 'to_date' in df.columns:
+                    label = str(df.loc[idx, 'to_date'])
+                elif 'date' in df.columns:
+                    label = str(df.loc[idx, 'date'])
+                else:
+                    # If no date column, just show the index
+                    label = str(idx)
+            except:
+                label = f"Sample {i + 1}"
+            
+            predictions.append({
+                "actual": float(y_test.iloc[i]),
+                "predicted": float(y_pred[i]),
+                "label": label
+            })
+
         return jsonify({
             "model_type": model_type,
             "accuracy": score_text,
-            "features": features
+            "features": features,
+            "predictions": predictions,
+            "target_name": target
         })
 
     except Exception as e:

@@ -50,6 +50,13 @@
             <div style="text-align: center;">
                 <span id="modelAccuracy" class="accuracy-badge">Accuracy: 85%</span>
             </div>
+
+            <!-- Prediction Chart -->
+            <div style="margin: 20px 0;">
+                <h4 style="margin-bottom: 15px; color: #cbd5e1; font-size: 0.9rem;">Actual vs Predicted Values:</h4>
+                <canvas id="predictionChart" style="max-height: 300px;"></canvas>
+            </div>
+
             <h4 style="margin-bottom: 15px; color: #cbd5e1; font-size: 0.9rem;">Top Drivers (Feature Importance):</h4>
             <div id="featureList" class="feature-list">
                 <!-- Features will be injected here -->
@@ -111,6 +118,68 @@
                             </div>
                         `;
                             list.insertAdjacentHTML('beforeend', html);
+                        });
+
+                        // Create Prediction Chart
+                        const ctx = document.getElementById('predictionChart').getContext('2d');
+
+                        // Destroy previous chart if exists
+                        if (window.predictionChartInstance) {
+                            window.predictionChartInstance.destroy();
+                        }
+
+                        const actualValues = data.predictions.map(p => p.actual);
+                        const predictedValues = data.predictions.map(p => p.predicted);
+                        const labels = data.predictions.map(p => p.label);
+
+                        window.predictionChartInstance = new Chart(ctx, {
+                            type: 'line',
+                            data: {
+                                labels: labels,
+                                datasets: [
+                                    {
+                                        label: 'Actual',
+                                        data: actualValues,
+                                        borderColor: '#10b981',
+                                        backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                                        tension: 0.3,
+                                        pointRadius: 4
+                                    },
+                                    {
+                                        label: 'Predicted',
+                                        data: predictedValues,
+                                        borderColor: '#0ea5e9',
+                                        backgroundColor: 'rgba(14, 165, 233, 0.1)',
+                                        tension: 0.3,
+                                        pointRadius: 4,
+                                        borderDash: [5, 5]
+                                    }
+                                ]
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: true,
+                                plugins: {
+                                    legend: {
+                                        labels: { color: '#cbd5e1' }
+                                    },
+                                    title: {
+                                        display: true,
+                                        text: `Predictions for: ${data.target_name}`,
+                                        color: '#cbd5e1'
+                                    }
+                                },
+                                scales: {
+                                    y: {
+                                        ticks: { color: '#94a3b8' },
+                                        grid: { color: 'rgba(255, 255, 255, 0.1)' }
+                                    },
+                                    x: {
+                                        ticks: { color: '#94a3b8' },
+                                        grid: { color: 'rgba(255, 255, 255, 0.1)' }
+                                    }
+                                }
+                            }
                         });
 
                         // Show Results
