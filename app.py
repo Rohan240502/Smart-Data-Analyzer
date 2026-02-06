@@ -124,37 +124,53 @@ def analyze_data(original_df, cleaned_df):
     # 2. Numerical Analysis
     if num_cols:
         col = num_cols[0]
-        # Histogram Data
-        hist, bin_edges = np.histogram(cleaned_df[col].dropna(), bins=10)
-        labels = [f"{int(bin_edges[i])}-{int(bin_edges[i+1])}" for i in range(len(hist))]
-        
-        analysis["charts"].append({
-            "type": "line",
-            "id": "lineChart",
-            "title": f"Distribution of {col}",
-            "labels": labels,
-            "data": hist.tolist(),
-            "color": "solid",
-            "grid": "half"
-        })
+        try:
+            # Histogram Data - handle single value case
+            data_to_plot = cleaned_df[col].dropna()
+            if not data_to_plot.empty:
+                hist, bin_edges = np.histogram(data_to_plot, bins=10)
+                labels = [f"{float(bin_edges[i]):.1f}-{float(bin_edges[i+1]):.1f}" for i in range(len(hist))]
+                
+                analysis["charts"].append({
+                    "type": "line",
+                    "id": "lineChart",
+                    "title": f"Distribution of {col}",
+                    "labels": labels,
+                    "data": hist.tolist(),
+                    "color": "solid",
+                    "grid": "half"
+                })
+        except Exception as e:
+            print(f"⚠️ Histogram failed for {col}: {e}")
 
     # 3. Correlation Heatmap
     if len(num_cols) > 1:
-        corr = cleaned_df[num_cols].corr().round(2)
-        print("DEBUG: Correlation matrix generated") # Debug print
-        analysis["heatmap"] = {
-            "columns": corr.columns.tolist(),
-            "data": corr.values.tolist() # Renamed from 'values' to 'data'
-        }
+        try:
+            corr = cleaned_df[num_cols].corr().round(2)
+            # Fill NaN correlations with 0 to prevent JSON errors
+            corr = corr.fillna(0)
+            
+            analysis["heatmap"] = {
+                "columns": corr.columns.tolist(),
+                "data": corr.values.tolist()
+            }
+        except Exception as e:
+            print(f"⚠️ Correlation failed: {e}")
+            analysis["heatmap"] = None
+            corr = None
     else:
         analysis["heatmap"] = None
         corr = None
 
     # 4. Smart Insights
-    analysis["insights"] = generate_insights(cleaned_df, num_cols, cat_cols, corr)
+    try:
+        analysis["insights"] = generate_insights(cleaned_df, num_cols, cat_cols, corr)
+    except Exception as e:
+        print(f"⚠️ Insights failed: {e}")
+        analysis["insights"] = []
     
     # 5. Metadata for Prediction
-    analysis["columns"] = cleaned_df.columns.tolist()
+    analysis["columns"] = [str(c) for c in cleaned_df.columns.tolist()]
 
     return analysis
 
@@ -292,32 +308,40 @@ def upload():
         filepath = os.path.join(app.config["UPLOAD_FOLDER"], file.filename)
         file.save(filepath)
 
-        # Read the CSV
-        original_df = pd.read_csv(filepath)
+        # Read the CSV (with encoding fallback)
+        try:
+            original_df = pd.read_csv(filepath)
+        except UnicodeDecodeError:
+            original_df = pd.read_csv(filepath, encoding='latin1')
         
         # ⚡ OPTIMIZATION: Smart Sampling for Large Datasets
-        # If dataset is huge (>20k rows), sample it to save RAM and prevent crashes on free tiers
         if len(original_df) > 20000:
-            print(f"⚠️ Dataset is large ({len(original_df)} rows). Sampling down to 20,000 for stability.")
             sample_df = original_df.sample(n=20000, random_state=42)
         else:
             sample_df = original_df
 
         # Clean the (sampled) data
-        cleaned_df = clean_data(sample_df)
+        cleaned_dashboard_df = clean_data(sample_df)
         
-        # Store the FULL original dataframe globally for the AI predictor
-        # This allows accurate predictions even if the dashboard uses a sample
-        full_cleaned_df = clean_data(original_df)
-        df = full_cleaned_df
+        # Store full cleaned version for prediction
+        df = clean_data(original_df)
         
-        # Generate Analysis on the SAMPLED/smaller data (for fast charts/heatmap)
-        analysis = analyze_data(sample_df, cleaned_df)
+        # Generate Analysis
+        analysis = analyze_data(sample_df, cleaned_dashboard_df)
 
-        cleaned_path = os.path.join(app.config["PROCESSED_FOLDER"], "cleaned_data.csv")
-        cleaned_df.to_csv(cleaned_path, index=False)
+        # JSON Safety: Replace NaN/Inf with None (which becomes null in JSON)
+        def clean_nans(obj):
+            if isinstance(obj, dict):
+                return {k: clean_nans(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [clean_nans(v) for v in obj]
+            elif isinstance(obj, float):
+                if pd.isna(obj) or obj == float('inf') or obj == float('-inf'):
+                    return None
+            return obj
 
-        # Return JSON instead of Render Template
+        analysis = clean_nans(analysis)
+
         return jsonify(analysis)
 
     except Exception as e:
