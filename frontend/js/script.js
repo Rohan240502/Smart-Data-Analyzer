@@ -2,7 +2,7 @@
 // CHANGE THIS to your actual Render backend URL after deploying (e.g., https://your-app.onrender.com)
 const API_BASE_URL = window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost' 
     ? 'http://127.0.0.1:5000' 
-    : 'https://smart-data-analyzer.onrender.com'; // Replace with your production URL
+    : 'https://datavisionary.onrender.com'; // Replace with your production URL
 
 // Global state to track charts and data
 let charts = {};
