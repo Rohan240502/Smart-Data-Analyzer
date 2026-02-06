@@ -276,39 +276,6 @@ def home():
 def upload():
     global df  # Declare df as global
     
-    if "file" not in request.files:
-        return "No file uploaded"
-
-    file = request.files["file"]
-    if file.filename == "":
-        return "No file selected"
-
-    if not file.filename.lower().endswith(".csv"):
-        return "Only CSV files allowed"
-
-    filepath = os.path.join(app.config["UPLOAD_FOLDER"], file.filename)
-    file.save(filepath)
-
-    original_df = pd.read_csv(filepath)
-    cleaned_df = clean_data(original_df)
-    
-    # Store cleaned dataframe globally for prediction
-    df = cleaned_df
-    
-    analysis = analyze_data(original_df, cleaned_df)
-
-
-    cleaned_path = os.path.join(app.config["PROCESSED_FOLDER"], "cleaned_data.csv")
-    cleaned_df.to_csv(cleaned_path, index=False)
-
-    preview = cleaned_df.head(10).to_html(
-        classes="table",
-        index=False
-    )
-
-    return render_template(
-        "index.html",
-        tables=preview,
         analysis=analysis,
         download_link="/download"
     )
