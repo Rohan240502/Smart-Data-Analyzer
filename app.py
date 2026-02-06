@@ -276,9 +276,52 @@ def home():
 def upload():
     global df  # Declare df as global
     
-        analysis=analysis,
-        download_link="/download"
-    )
+    try:
+        if "file" not in request.files:
+            return "No file uploaded", 400
+
+        file = request.files["file"]
+        if file.filename == "":
+            return "No file selected", 400
+
+        if not file.filename.lower().endswith(".csv"):
+            return "Only CSV files allowed", 400
+
+        filepath = os.path.join(app.config["UPLOAD_FOLDER"], file.filename)
+        file.save(filepath)
+
+        # Read the CSV
+        original_df = pd.read_csv(filepath)
+        
+        # ⚡ OPTIMIZATION: Smart Sampling for Large Datasets
+        # If dataset is huge (>20k rows), sample it to save RAM and prevent crashes on free tiers
+        if len(original_df) > 20000:
+            print(f"⚠️ Dataset is large ({len(original_df)} rows). Sampling down to 20,000 for stability.")
+            sample_df = original_df.sample(n=20000, random_state=42)
+        else:
+            sample_df = original_df
+
+        # Clean the (sampled) data
+        cleaned_df = clean_data(sample_df)
+        
+        # Store the FULL original dataframe globally for the AI predictor
+        # This allows accurate predictions even if the dashboard uses a sample
+        full_cleaned_df = clean_data(original_df)
+        df = full_cleaned_df
+        
+        # Generate Analysis on the SAMPLED/smaller data (for fast charts/heatmap)
+        analysis = analyze_data(sample_df, cleaned_df)
+
+        cleaned_path = os.path.join(app.config["PROCESSED_FOLDER"], "cleaned_data.csv")
+        cleaned_df.to_csv(cleaned_path, index=False)
+
+        return render_template("index.html", analysis=analysis)
+
+    except Exception as e:
+        print(f"❌ ERROR in /upload: {e}")
+        import traceback
+        traceback.print_exc()
+        return f"Internal Server Error: {str(e)}", 500
 
 
 @app.route("/download")
