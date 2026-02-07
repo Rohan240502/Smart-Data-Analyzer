@@ -325,6 +325,11 @@ def upload():
         cleaned_dashboard_df = clean_data(original_df)
         df = cleaned_dashboard_df 
         
+        # ⚡ SAVE CLEANED DATA: So the /download route can find it
+        processed_path = os.path.join(app.config["PROCESSED_FOLDER"], "cleaned_data.csv")
+        cleaned_dashboard_df.to_csv(processed_path, index=False)
+        print(f"💾 Cleaned data saved to: {processed_path}")
+
         print("📊 Analyzing data...")
         analysis = analyze_data(original_df, cleaned_dashboard_df)
         
@@ -404,11 +409,20 @@ def predict():
     # Prepare Data
     data = df.copy()
     
-    # 1. Handle Missing Values
-    data = data.dropna()
+    # 1. Handle Missing Values (Flexible approach)
+    # Only drop rows where target is NaN (we can't predict nothing)
+    data = data.dropna(subset=[target])
     
     if len(data) < 10:
-        return jsonify({"error": "Not enough data points after cleaning"}), 400
+        return jsonify({"error": "Not enough data points with valid target values. Try a different column."}), 400
+
+    # For other columns, fill NaNs with mean (numeric) or mode (category) to keep as many rows as possible
+    num_cols = data.select_dtypes(include=[np.number]).columns
+    data[num_cols] = data[num_cols].fillna(data[num_cols].mean().fillna(0))
+    
+    cat_cols = data.select_dtypes(exclude=[np.number]).columns
+    for col in cat_cols:
+         data[col] = data[col].fillna(data[col].mode()[0] if not data[col].mode().empty else "Unknown")
 
     # 2. Encode Categorical Data
     le = LabelEncoder()

@@ -240,27 +240,50 @@ function renderHeatmap(data) {
 function renderCharts(config) {
     const container = document.getElementById('chartsContainer');
     container.innerHTML = '';
+    
+    // Clear old instances
+    Object.values(charts).forEach(c => { if(c && c.destroy) c.destroy(); });
+
     config.forEach(c => {
         const id = `chart_${Math.random().toString(36).substr(2, 9)}`;
-        container.innerHTML += `
-            <div class="card chart-card">
-                <div class="card-header"><i class="fa-solid fa-chart-area"></i><h2>${c.title}</h2></div>
-                <div style="height: 300px;"><canvas id="${id}"></canvas></div>
+        const card = document.createElement('div');
+        card.className = 'card chart-card';
+        card.innerHTML = `
+            <div class="card-header" style="justify-content: space-between;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <i class="fa-solid fa-chart-pie"></i>
+                    <h2>${c.title}</h2>
+                </div>
+                <button class="download-btn-chart" onclick="downloadChart('${id}', '${c.title}')" title="Download as Image">
+                    <i class="fa-solid fa-download"></i>
+                </button>
             </div>
+            <div style="height: 300px;"><canvas id="${id}"></canvas></div>
         `;
+        container.appendChild(card);
+        
         setTimeout(() => {
             const ctx = document.getElementById(id).getContext('2d');
-            new Chart(ctx, {
+            charts[id] = new Chart(ctx, {
                 type: c.type,
                 data: {
                     labels: c.labels,
                     datasets: [{ data: c.data, backgroundColor: c.color === 'multi' ? ['#a855f7', '#0ea5e9', '#ec4899', '#f59e0b', '#10b981'] : '#a855f7' }]
                 },
-                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: c.type === 'doughnut', labels: { color: '#94a3b8' } } } }
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: c.type === 'doughnut', labels: { color: '#94a3b8' } } }, scales: c.type === 'doughnut' ? {} : { y: { grid: { color: 'rgba(255,255,255,0.05)'}, ticks: {color:'#94a3b8'} }, x: { ticks:{color:'#94a3b8'}, grid:{display:false} } } }
             });
         }, 10);
     });
 }
+
+// Support function for downloading charts
+window.downloadChart = (chartId, title) => {
+    const canvas = document.getElementById(chartId);
+    const link = document.createElement('a');
+    link.download = `${title.replace(/\s+/g, '_')}.png`;
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+};
 
 
 // --- Logic: Download Chart as Image ---

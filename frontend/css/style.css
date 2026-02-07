@@ -204,6 +204,27 @@ h1 {
     transition: 0.3s;
 }
 
+.download-btn-chart {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: var(--text-secondary);
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.download-btn-chart:hover {
+    background: var(--primary-gradient);
+    color: white;
+    transform: scale(1.1);
+    border-color: transparent;
+}
+
 /* Data Table (Screen 4) */
 .preview-card {
     overflow: hidden;
