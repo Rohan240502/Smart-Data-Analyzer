@@ -36,28 +36,42 @@ latest_prediction = None
 # Data Cleaning
 # -----------------------------
 def clean_data(df):
-    df = df.dropna(axis=1, how="all")
-    df = df.dropna(how="all")
-    df = df.drop_duplicates()
+    try:
+        df = df.dropna(axis=1, how="all")
+        df = df.dropna(how="all")
+        df = df.drop_duplicates()
 
-    df.columns = (
-        df.columns.astype(str)
-        .str.lower()
-        .str.strip()
-        .str.replace(" ", "_")
-    )
+        df.columns = [
+            str(c).lower().strip().replace(" ", "_") for c in df.columns
+        ]
 
-    for col in df.columns:
-        df[col] = pd.to_numeric(df[col], errors="ignore")
+        for col in df.columns:
+            try:
+                # Use coerce to handle messy data, then fill NaNs
+                df[col] = pd.to_numeric(df[col], errors="coerce")
+            except:
+                continue
 
-    for col in df.columns:
-        if pd.api.types.is_numeric_dtype(df[col]):
-            df[col] = df[col].fillna(df[col].mean())
-        else:
-            if not df[col].mode().empty:
-                df[col] = df[col].fillna(df[col].mode()[0])
-
-    return df
+        for col in df.columns:
+            try:
+                if pd.api.types.is_numeric_dtype(df[col]):
+                    mean_val = df[col].mean()
+                    if not pd.isna(mean_val):
+                        df[col] = df[col].fillna(mean_val)
+                    else:
+                        df[col] = df[col].fillna(0)
+                else:
+                    mode_res = df[col].mode()
+                    if not mode_res.empty:
+                        df[col] = df[col].fillna(mode_res[0])
+                    else:
+                        df[col] = df[col].fillna("Unknown")
+            except:
+                continue
+        return df
+    except Exception as e:
+        print(f"Error in clean_data: {e}")
+        return df
 
 
 # -----------------------------
@@ -308,52 +322,69 @@ def upload():
         filepath = os.path.join(app.config["UPLOAD_FOLDER"], file.filename)
         file.save(filepath)
 
-        # ⚡ MEMORY-SAFE LOADING: Check file size first
+        # ⚡ MEMORY-SAFE LOADING
         file_size_mb = os.path.getsize(filepath) / (1024 * 1024)
+        print(f"📂 Processing file: {file.filename} ({file_size_mb:.2f}MB)")
         
         try:
-            # If file > 10MB, only read a chunk to stay within 512MB RAM limit
-            if file_size_mb > 10:
-                print(f"📦 Large file ({file_size_mb:.1f}MB). Reading first 30k rows for stability.")
-                original_df = pd.read_csv(filepath, nrows=30000)
-            else:
+            # Try multiple encodings
+            for enc in ['utf-8', 'latin1', 'iso-8859-1', 'cp1252']:
                 try:
-                    original_df = pd.read_csv(filepath)
+                    if file_size_mb > 10:
+                        print(f"📦 Large file. Reading first 30k rows with {enc}...")
+                        original_df = pd.read_csv(filepath, nrows=30000, encoding=enc, low_memory=False)
+                    else:
+                        print(f"📦 Reading full file with {enc}...")
+                        original_df = pd.read_csv(filepath, encoding=enc, low_memory=False)
+                    print("✅ Successfully read CSV")
+                    break
                 except UnicodeDecodeError:
-                    original_df = pd.read_csv(filepath, encoding='latin1')
+                    continue
+            else:
+                raise Exception("Could not decode CSV with any standard encoding.")
         except Exception as e:
+            print(f"❌ Read failed: {e}")
             return jsonify({"error": f"Failed to read CSV: {str(e)}"}), 400
         
         # Clean and Analyze
+        print("🧹 Cleaning data...")
         cleaned_dashboard_df = clean_data(original_df)
-        
-        # Store for AI (capped at 30k for RAM safety on Free Tier)
         df = cleaned_dashboard_df 
         
-        # Generate Analysis
+        print("📊 Analyzing data...")
         analysis = analyze_data(original_df, cleaned_dashboard_df)
 
-        # JSON Safety: Replace NaN/Inf with None
+        # JSON Safety: Robustly replace NaN/Inf/Non-serializable types
+        import numpy as np
         def clean_nans(obj):
-            if isinstance(obj, (float, int)):
-                if pd.isna(obj) or obj == float('inf') or obj == float('-inf'):
-                    return None
-            elif isinstance(obj, dict):
+            if isinstance(obj, dict):
                 return {k: clean_nans(v) for k, v in obj.items()}
             elif isinstance(obj, list):
                 return [clean_nans(v) for v in obj]
+            elif isinstance(obj, (float, np.floating)):
+                if np.isnan(obj) or np.isinf(obj):
+                    return None
+                return float(obj)
+            elif isinstance(obj, (int, np.integer)):
+                return int(obj)
+            elif pd.isna(obj): # Catch pandas specific NAs
+                return None
             return obj
 
+        print("🔏 Preparing JSON response...")
         safe_analysis = clean_nans(analysis)
+        print("🚀 JSON prepared successfully. Sending response.")
         return jsonify(safe_analysis)
 
     except Exception as e:
         import traceback
         error_msg = traceback.format_exc()
-        print(f"⛔ CRITICAL ERROR:\n{error_msg}")
+        # Log to server console
+        print(f"⛔ SERVER CRASH during upload/analyze:\n{error_msg}")
         return jsonify({
-            "error": "Server encountered an error while processing data.",
-            "details": str(e)
+            "error": "The server failed to process this specific dataset.",
+            "details": str(e) if str(e) else "Internal processing error",
+            "tip": "This dataset might be too complex or contain incompatible characters. Try a simpler version."
         }), 500
 
 
