@@ -33,54 +33,45 @@ latest_prediction = None
 
 
 # -----------------------------
-# Data Cleaning
+# Data Cleaning (Optimized for Speed)
 # -----------------------------
 def clean_data(df):
     try:
+        # 1. Quick Drop
         df = df.dropna(axis=1, how="all")
         df = df.dropna(how="all")
         df = df.drop_duplicates()
 
-        df.columns = [
-            str(c).lower().strip().replace(" ", "_") for c in df.columns
-        ]
+        # 2. Normalize Headlines
+        df.columns = [str(c).lower().strip().replace(" ", "_").replace("(", "").replace(")", "") for c in df.columns]
 
-        for col in df.columns:
-            try:
-                # Use coerce to handle messy data, then fill NaNs
+        # 3. Smart Type Conversion (Sequential pd.to_numeric is slow)
+        # Only attempt on columns that aren't already identified as numeric but might be
+        potential_numeric = df.select_dtypes(include=['object']).columns
+        for col in potential_numeric:
+            # Sample check: if first 5 non-null values aren't numeric-ish, skip
+            sample = df[col].dropna().head(5).astype(str)
+            if sample.str.match(r'^-?\d*\.?\d*$').all():
                 df[col] = pd.to_numeric(df[col], errors="coerce")
-            except:
-                continue
 
-        for col in df.columns:
-            try:
-                if pd.api.types.is_numeric_dtype(df[col]):
-                    mean_val = df[col].mean()
-                    if not pd.isna(mean_val):
-                        df[col] = df[col].fillna(mean_val)
-                    else:
-                        df[col] = df[col].fillna(0)
-                else:
-                    mode_res = df[col].mode()
-                    if not mode_res.empty:
-                        df[col] = df[col].fillna(mode_res[0])
-                    else:
-                        df[col] = df[col].fillna("Unknown")
-            except:
-                continue
+        # 4. Vectorized Imputation
+        num_cols = df.select_dtypes(include=[np.number]).columns
+        if not num_cols.empty:
+            df[num_cols] = df[num_cols].fillna(df[num_cols].mean().fillna(0))
+        
+        cat_cols = df.select_dtypes(exclude=[np.number]).columns
+        for col in cat_cols:
+            if df[col].isnull().any():
+                mode_res = df[col].mode()
+                df[col] = df[col].fillna(mode_res[0] if not mode_res.empty else "Unknown")
+        
         return df
     except Exception as e:
         print(f"Error in clean_data: {e}")
         return df
 
-
 # -----------------------------
-# Data Analysis
-# -----------------------------
-import numpy as np
-
-# -----------------------------
-# Data Analysis
+# Data Analysis (Performance Focused)
 # -----------------------------
 def analyze_data(original_df, cleaned_df):
     analysis = {}
@@ -98,26 +89,26 @@ def analyze_data(original_df, cleaned_df):
     }
 
     analysis["missing_by_column"] = {
-        k: int(v) for k, v in cleaned_df.isnull().sum().to_dict().items()
+        k: int(v) for k, v in cleaned_df.isnull().sum().head(20).to_dict().items()
     }
 
-    # Generate Chart Data
-    analysis["charts"] = []
-    
-    # Identifiers for charts
+    # Column separation
     cat_cols = cleaned_df.select_dtypes(include="object").columns.tolist()
     num_cols = cleaned_df.select_dtypes(include="number").columns.tolist()
 
-    # 1. Categorical Analysis (Variety: Bar and Pie)
-    for i, col in enumerate(cat_cols[:2]): # Top 2 categorical columns
+    # Generate Chart Data (Limit to avoid payload/processing bloat)
+    analysis["charts"] = []
+    
+    # 1. Categorical Analysis
+    for i, col in enumerate(cat_cols[:3]): 
         try:
-            counts = cleaned_df[col].value_counts().head(10)
-            chart_type = "doughnut" if i == 1 else "bar" # First is Bar, Second is Pie
+            counts = cleaned_df[col].value_counts().head(8)
+            chart_type = "doughnut" if i == 1 else "bar"
             
             analysis["charts"].append({
                 "type": chart_type,
                 "id": f"catChart_{i}",
-                "title": f"{col.replace('_', ' ').title()} Breakdown",
+                "title": f"{col.replace('_', ' ').title()} Split",
                 "labels": [str(x) for x in counts.index.tolist()],
                 "data": [float(x) for x in counts.values.tolist()],
                 "color": "multi" if chart_type == "doughnut" else "gradient",
@@ -125,18 +116,18 @@ def analyze_data(original_df, cleaned_df):
             })
         except: continue
 
-    # 2. Numerical Analysis (Variety: Distribution Lines)
-    for i, col in enumerate(num_cols[:2]): # Top 2 numerical columns
+    # 2. Numerical Analysis
+    for i, col in enumerate(num_cols[:2]):
         try:
             data_to_plot = cleaned_df[col].dropna()
             if not data_to_plot.empty:
-                hist, bin_edges = np.histogram(data_to_plot, bins=10)
+                hist, bin_edges = np.histogram(data_to_plot, bins=8)
                 labels = [f"{float(bin_edges[j]):.1f}" for j in range(len(hist))]
                 
                 analysis["charts"].append({
                     "type": "line",
                     "id": f"numChart_{i}",
-                    "title": f"Distribution of {col.replace('_', ' ').title()}",
+                    "title": f"{col.replace('_', ' ').title()} Trend",
                     "labels": labels,
                     "data": [float(x) for x in hist.tolist()],
                     "color": "solid",
@@ -144,10 +135,12 @@ def analyze_data(original_df, cleaned_df):
                 })
         except: continue
 
-    # 3. Correlation Heatmap
+    # 3. Correlation Heatmap (CRITICAL: Limit to top 15 numeric cols)
+    # Correlation is O(N^2) - 500+ cols will fail 504 timeout on free tier
     if len(num_cols) > 1:
         try:
-            corr = cleaned_df[num_cols].corr().round(2).fillna(0)
+            target_cols = num_cols[:15] # Limit heatmap size for speed
+            corr = cleaned_df[target_cols].corr().round(2).fillna(0)
             analysis["heatmap"] = {
                 "columns": [str(c) for c in corr.columns],
                 "data": corr.values.tolist()
@@ -159,14 +152,14 @@ def analyze_data(original_df, cleaned_df):
 
     # 4. Smart Insights
     try:
-        analysis["insights"] = generate_insights(cleaned_df, num_cols, cat_cols, 
-                                               cleaned_df[num_cols].corr() if len(num_cols) > 1 else None)
+        # Use limited numeric cols for insights speed if too many
+        sub_num = num_cols[:10]
+        analysis["insights"] = generate_insights(cleaned_df, sub_num, cat_cols[:10], 
+                                               cleaned_df[sub_num].corr() if len(sub_num) > 1 else None)
     except:
         analysis["insights"] = []
     
-    # 5. Metadata for Prediction
     analysis["columns"] = [str(c) for c in cleaned_df.columns.tolist()]
-
     return analysis
 
 # -----------------------------

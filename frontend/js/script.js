@@ -46,12 +46,22 @@ function updateFileDisplay(file) {
 // --- Main: Upload and Analyze ---
 uploadForm.addEventListener('submit', async function (e) {
     e.preventDefault();
-    if (!fileInput.files[0]) return;
+    const file = fileInput.files[0];
+    if (!file) return;
+
+    // ⚡ SAFETY: Free tier servers crash on massive files
+    const MAX_SIZE = 20 * 1024 * 1024; // 20MB
+    if (file.size > MAX_SIZE) {
+        alert('File is too large for the free server tier. Please use a file smaller than 20MB.');
+        return;
+    }
 
     const formData = new FormData();
-    formData.append('file', fileInput.files[0]);
+    formData.append('file', file);
 
     uploadLoader.style.display = 'block';
+    const loaderText = uploadLoader.querySelector('p');
+    loaderText.textContent = "Uploading & Analyzing... (May take 30-60s)";
     
     try {
         const response = await fetch(`${API_BASE_URL}/upload`, {
@@ -59,7 +69,15 @@ uploadForm.addEventListener('submit', async function (e) {
             body: formData
         });
 
-        if (!response.ok) throw new Error('Upload failed');
+        if (response.status === 504) {
+            throw new Error('The server timed out. This dataset might be too complex for the free tier, or the server is waking up. Please try again in a moment.');
+        }
+
+        if (!response.ok) {
+            const errData = await response.json();
+            throw new Error(errData.details || errData.error || 'Server error');
+        }
+
         const data = await response.json();
         latestAnalysis = data;
         
@@ -71,7 +89,8 @@ uploadForm.addEventListener('submit', async function (e) {
         window.scrollTo({ top: 0, behavior: 'smooth' });
 
     } catch (err) {
-        alert('Error: ' + err.message);
+        alert('Analysis Error: ' + err.message);
+        console.error('Fetch Error:', err);
     } finally {
         uploadLoader.style.display = 'none';
     }
