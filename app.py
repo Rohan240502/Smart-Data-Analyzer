@@ -104,83 +104,64 @@ def analyze_data(original_df, cleaned_df):
     # Generate Chart Data
     analysis["charts"] = []
     
-    # Identify columns
+    # Identifiers for charts
     cat_cols = cleaned_df.select_dtypes(include="object").columns.tolist()
     num_cols = cleaned_df.select_dtypes(include="number").columns.tolist()
-    
-    # 1. Categorical Analysis
-    if cat_cols:
-        col = cat_cols[0]
-        # Bar Chart Data
-        vc = cleaned_df[col].astype(str).value_counts().head(10)
-        analysis["charts"].append({
-            "type": "bar",
-            "id": "barChart",
-            "title": f"Top Categories in {col}",
-            "labels": vc.index.tolist(),
-            "data": vc.tolist(),
-            "color": "gradient",
-            "grid": "full"
-        })
-        
-        # Pie Chart Data (Top 5)
-        vc_pie = cleaned_df[col].astype(str).value_counts().head(5)
-        analysis["charts"].append({
-            "type": "doughnut",
-            "id": "pieChart",
-            "title": f"Composition of {col}",
-            "labels": vc_pie.index.tolist(),
-            "data": vc_pie.tolist(),
-            "color": "multi",
-            "grid": "half"
-        })
 
-    # 2. Numerical Analysis
-    if num_cols:
-        col = num_cols[0]
+    # 1. Categorical Analysis (Variety: Bar and Pie)
+    for i, col in enumerate(cat_cols[:2]): # Top 2 categorical columns
         try:
-            # Histogram Data - handle single value case
+            counts = cleaned_df[col].value_counts().head(10)
+            chart_type = "doughnut" if i == 1 else "bar" # First is Bar, Second is Pie
+            
+            analysis["charts"].append({
+                "type": chart_type,
+                "id": f"catChart_{i}",
+                "title": f"{col.replace('_', ' ').title()} Breakdown",
+                "labels": [str(x) for x in counts.index.tolist()],
+                "data": [float(x) for x in counts.values.tolist()],
+                "color": "multi" if chart_type == "doughnut" else "gradient",
+                "grid": "half"
+            })
+        except: continue
+
+    # 2. Numerical Analysis (Variety: Distribution Lines)
+    for i, col in enumerate(num_cols[:2]): # Top 2 numerical columns
+        try:
             data_to_plot = cleaned_df[col].dropna()
             if not data_to_plot.empty:
                 hist, bin_edges = np.histogram(data_to_plot, bins=10)
-                labels = [f"{float(bin_edges[i]):.1f}-{float(bin_edges[i+1]):.1f}" for i in range(len(hist))]
+                labels = [f"{float(bin_edges[j]):.1f}" for j in range(len(hist))]
                 
                 analysis["charts"].append({
                     "type": "line",
-                    "id": "lineChart",
-                    "title": f"Distribution of {col}",
+                    "id": f"numChart_{i}",
+                    "title": f"Distribution of {col.replace('_', ' ').title()}",
                     "labels": labels,
-                    "data": hist.tolist(),
+                    "data": [float(x) for x in hist.tolist()],
                     "color": "solid",
                     "grid": "half"
                 })
-        except Exception as e:
-            print(f"⚠️ Histogram failed for {col}: {e}")
+        except: continue
 
     # 3. Correlation Heatmap
     if len(num_cols) > 1:
         try:
-            corr = cleaned_df[num_cols].corr().round(2)
-            # Fill NaN correlations with 0 to prevent JSON errors
-            corr = corr.fillna(0)
-            
+            corr = cleaned_df[num_cols].corr().round(2).fillna(0)
             analysis["heatmap"] = {
-                "columns": corr.columns.tolist(),
+                "columns": [str(c) for c in corr.columns],
                 "data": corr.values.tolist()
             }
-        except Exception as e:
-            print(f"⚠️ Correlation failed: {e}")
+        except:
             analysis["heatmap"] = None
-            corr = None
     else:
         analysis["heatmap"] = None
-        corr = None
 
     # 4. Smart Insights
     try:
-        analysis["insights"] = generate_insights(cleaned_df, num_cols, cat_cols, corr)
-    except Exception as e:
-        print(f"⚠️ Insights failed: {e}")
+        analysis["insights"] = generate_insights(cleaned_df, num_cols, cat_cols, 
+                                               cleaned_df[num_cols].corr() if len(num_cols) > 1 else None)
+    except:
         analysis["insights"] = []
     
     # 5. Metadata for Prediction
