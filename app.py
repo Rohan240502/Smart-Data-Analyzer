@@ -443,6 +443,15 @@ def predict():
     X = data.drop(columns=[target])
     y = data[target]
     
+    # ⚡ ACCURACY IMPROVEMENT: Scaling
+    from sklearn.preprocessing import StandardScaler
+    try:
+        scaler = StandardScaler()
+        X_scaled = scaler.fit_transform(X)
+        X = pd.DataFrame(X_scaled, columns=X.columns)
+    except:
+        pass # Fallback to unscaled if any error
+
     # 4. Train Model
     try:
         # Detect if Regression (Number) or Classification (Text/category)
@@ -451,13 +460,14 @@ def predict():
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
         
         if is_numeric and df[target].nunique() > 10:
-            model = RandomForestRegressor(n_estimators=50, random_state=42)
+            # Increased n_estimators for better learning
+            model = RandomForestRegressor(n_estimators=100, random_state=42)
             model.fit(X_train, y_train)
             score = r2_score(y_test, model.predict(X_test))
             score_text = f"{score:.2%} (R² Score)"
             model_type = "Regression"
         else:
-            model = RandomForestClassifier(n_estimators=50, random_state=42)
+            model = RandomForestClassifier(n_estimators=100, random_state=42)
             model.fit(X_train, y_train)
             score = accuracy_score(y_test, model.predict(X_test))
             score_text = f"{score:.2%} (Accuracy)"
