@@ -145,7 +145,7 @@ function renderDashboard(data) {
     renderCharts(data.charts);
 }
 
-// --- Screen 4: Preview Table ---
+// --- Screen 4: Preview Table (Fix: join cells correctly) ---
 function renderPreviewTable(rows) {
     if (!rows || rows.length === 0) return;
     const head = document.getElementById('previewHead');
@@ -154,7 +154,7 @@ function renderPreviewTable(rows) {
     const cols = Object.keys(rows[0]);
     head.innerHTML = cols.map(c => `<th>${c}</th>`).join('');
     body.innerHTML = rows.map(r => `
-        <tr>${cols.map(c => `<td>${r[c] !== null ? r[c] : '-'}</td>`).join(' ')}</tr>
+        <tr>${cols.map(c => `<td>${r[c] !== null ? r[c] : '-'}</td>`).join('')}</tr>
     `).join('');
 }
 
@@ -168,12 +168,20 @@ trainBtn.addEventListener('click', async () => {
         const fd = new FormData();
         fd.append('target', target);
         const res = await fetch(`${API_BASE_URL}/predict`, { method: 'POST', body: fd });
-        const data = await res.json();
         
+        // ⚡ SAFETY: Check if response is actually JSON
+        const contentType = res.headers.get("content-type");
+        if (!contentType || !contentType.includes("application/json")) {
+            const text = await res.text();
+            console.error("Non-JSON response:", text);
+            throw new Error('The server returned an error page instead of data. The backend might be overloaded or crashing.');
+        }
+
+        const data = await res.json();
         if (data.error) throw new Error(data.error);
         renderPredictionResults(data);
     } catch (err) {
-        alert(err.message);
+        alert('Model Training Error: ' + err.message);
     } finally {
         predictLoader.style.display = 'none';
     }
@@ -181,7 +189,17 @@ trainBtn.addEventListener('click', async () => {
 
 function renderPredictionResults(data) {
     predictResults.style.display = 'block';
-    document.getElementById('modelAccuracy').textContent = `${data.model_type}: ${data.accuracy}`;
+    
+    // Add Accuracy AND Download Button to the top of results
+    const accuracySpan = document.getElementById('modelAccuracy');
+    accuracySpan.innerHTML = `
+        <div style="display: flex; align-items: center; justify-content: center; gap: 20px;">
+            <span>${data.model_type}: ${data.accuracy}</span>
+            <button class="download-btn-chart" onclick="downloadChart('predictionChart', 'Target_${data.target_name}_Prediction')" title="Download Graph">
+                <i class="fa-solid fa-download"></i>
+            </button>
+        </div>
+    `;
     
     // Feature Importance Bars (Screen 14)
     const flist = document.getElementById('featureList');
@@ -228,7 +246,7 @@ function renderHeatmap(data) {
     data.data.forEach((row, i) => {
         html += `<tr><th>${data.columns[i]}</th>`;
         row.forEach(val => {
-            const alpha = Math.abs(val);
+            const alpha = Math.max(Math.abs(val), 0.1);
             const color = val > 0 ? `rgba(139, 92, 246, ${alpha})` : `rgba(239, 68, 68, ${alpha})`;
             html += `<td style="background: ${color}; color: ${alpha > 0.5 ? '#fff' : '#94a3b8'}">${val}</td>`;
         });
