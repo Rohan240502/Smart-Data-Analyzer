@@ -424,41 +424,44 @@ def predict():
     for col in cat_cols:
          data[col] = data[col].fillna(data[col].mode()[0] if not data[col].mode().empty else "Unknown")
 
+    # ⚡ SPEED OPTIMIZATION: Sampling for fast training on free tier
+    if len(data) > 10000:
+        print(f"📦 Large training set. Sampling 10,000 rows for speed...")
+        data = data.sample(10000, random_state=42)
+
     # 2. Encode Categorical Data
     le = LabelEncoder()
-    cat_cols = data.select_dtypes(include="object").columns
-    for col in cat_cols:
+    cat_cols_to_encode = data.select_dtypes(include="object").columns
+    for col in cat_cols_to_encode:
         data[col] = le.fit_transform(data[col].astype(str))
 
     # 3. Split Features/Target
     X = data.drop(columns=[target])
     y = data[target]
     
-    # ⚡ ACCURACY IMPROVEMENT: Scaling
-    from sklearn.preprocessing import StandardScaler
-    try:
-        scaler = StandardScaler()
-        X_scaled = scaler.fit_transform(X)
-        X = pd.DataFrame(X_scaled, columns=X.columns)
-    except:
-        pass # Fallback to unscaled if any error
+    # ⚡ SCALE ONLY NUMERIC FEATURES
+    num_features = X.select_dtypes(include=[np.number]).columns
+    if not num_features.empty:
+        try:
+            from sklearn.preprocessing import StandardScaler
+            scaler = StandardScaler()
+            X[num_features] = scaler.fit_transform(X[num_features])
+        except: pass
 
-    # 4. Train Model
+    # 4. Train Model (Optimized Estimators for speed)
     try:
-        # Detect if Regression (Number) or Classification (Text/category)
         is_numeric = pd.api.types.is_numeric_dtype(df[target])
-        
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
         
+        # Use 50 estimators instead of 100 for faster training on Render Free
         if is_numeric and df[target].nunique() > 10:
-            # Increased n_estimators for better learning
-            model = RandomForestRegressor(n_estimators=100, random_state=42)
+            model = RandomForestRegressor(n_estimators=50, random_state=42)
             model.fit(X_train, y_train)
             score = r2_score(y_test, model.predict(X_test))
             score_text = f"{score:.2%} (R² Score)"
             model_type = "Regression"
         else:
-            model = RandomForestClassifier(n_estimators=100, random_state=42)
+            model = RandomForestClassifier(n_estimators=50, random_state=42)
             model.fit(X_train, y_train)
             score = accuracy_score(y_test, model.predict(X_test))
             score_text = f"{score:.2%} (Accuracy)"
