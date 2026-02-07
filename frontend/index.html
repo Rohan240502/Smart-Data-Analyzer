@@ -33,7 +33,7 @@
     <div class="container fade-in">
       <header class="header">
         <div class="logo">
-          <i class="fa-solid fa-chart-simple"></i>
+          <i class="fa-solid fa-chart-line"></i>
           <h1>Smart Data Analyzer</h1>
         </div>
         <p class="subtitle">
@@ -41,66 +41,21 @@
         </p>
       </header>
 
-      <!-- UPLOAD SECTION -->
-      <div class="card upload-card bounce-in">
-        <div class="card-header">
-          <i class="fa-solid fa-cloud-arrow-up"></i>
-          <h2>Upload Dataset</h2>
-        </div>
-        <form id="uploadForm" class="upload-form">
-          <div class="file-input-wrapper">
-            <input
-              type="file"
-              name="file"
-              id="file"
-              class="file-input"
-              required
-              accept=".csv"
-            />
-            <label for="file" class="file-label">
-              <i class="fa-solid fa-file-csv"></i>
-              <span id="file-name-display">Choose a CSV file...</span>
-            </label>
-          </div>
-          <button type="submit" id="analyzeBtn" class="btn-primary">
-            Analyze Now <i class="fa-solid fa-bolt"></i>
-          </button>
-        </form>
-        <div
-          id="uploadLoader"
-          class="loading-spinner"
-          style="display: none; text-align: center; margin-top: 15px"
-        >
-          <i
-            class="fa-solid fa-circle-notch fa-spin fa-2x"
-            style="color: #38bdf8"
-          ></i>
-          <p style="color: #94a3b8; margin-top: 5px">crunching your data...</p>
-        </div>
-      </div>
-
-      <!-- DYNAMIC CONTENT CONTAINER -->
+      <!-- DASHBOARD (Visible after Upload) -->
       <div id="dashboard" style="display: none">
-        <!-- 1. AI PREDICTOR (TOP PRIORITY) -->
-        <div class="card predict-card slide-up delay-1">
+        <!-- AI PREDICTOR (Screen 3, 11-14) -->
+        <div class="card predict-card slide-up delay-1" id="predictCard">
           <div class="card-header">
-            <div style="display: flex; align-items: center; gap: 10px">
-              <i class="fa-solid fa-robot"></i>
-              <h2>AI Auto-Predictor</h2>
-            </div>
-            <div class="status-badge" id="modelAccuracy">Select Target</div>
+            <i class="fa-solid fa-robot"></i>
+            <h2>AI Auto-Predictor</h2>
           </div>
           <div class="predict-controls">
             <select id="targetSelect" class="predict-select"></select>
             <button id="trainBtn" class="predict-btn">
-              <i class="fa-solid fa-robot"></i> Train Model
+              <i class="fa-solid fa-rocket"></i> Train Model
             </button>
-            <div
-              id="predictLoader"
-              class="loading-spinner"
-              style="display: none"
-            >
-              <i class="fa-solid fa-circle-notch fa-spin"></i>
+            <div id="predictLoader" style="display: none; padding-left: 20px">
+              <i class="fa-solid fa-spinner fa-spin"></i>
             </div>
           </div>
 
@@ -109,24 +64,47 @@
             class="predict-results"
             style="display: none"
           >
-            <div class="predict-grid">
-              <div class="predict-chart-container" style="height: 300px">
+            <div style="text-align: center; margin-bottom: 25px">
+              <span id="modelAccuracy" class="accuracy-badge"></span>
+            </div>
+            <div class="grid-container">
+              <div class="chart-container" style="height: 350px">
                 <canvas id="predictionChart"></canvas>
               </div>
               <div class="feature-importance">
-                <h3>Key Drivers</h3>
+                <h3 style="margin-bottom: 20px; color: var(--text-secondary)">
+                  Top Drivers
+                </h3>
                 <div id="featureList" class="feature-list"></div>
               </div>
             </div>
           </div>
         </div>
 
-        <!-- 2. SUMMARY STATS & INSIGHTS -->
-        <div class="grid-container">
-          <div class="card summary-card slide-up delay-2">
+        <!-- CLEANED DATA PREVIEW (Screen 4) -->
+        <div class="card preview-card slide-up delay-2">
+          <div class="preview-header">
+            <div class="card-header" style="margin-bottom: 0">
+              <i class="fa-solid fa-table"></i>
+              <h2>Cleaned Data Preview</h2>
+            </div>
+          </div>
+          <div class="table-wrapper">
+            <table class="styled-table" id="previewTable">
+              <thead>
+                <tr id="previewHead"></tr>
+              </thead>
+              <tbody id="previewBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- SUMMARY STATS (Screen 6) -->
+        <div class="grid-container slide-up delay-3">
+          <div class="card">
             <div class="card-header">
-              <i class="fa-solid fa-calculator"></i>
-              <h2>Quick Summary</h2>
+              <i class="fa-solid fa-wand-magic-sparkles"></i>
+              <h2>Cleaning Summary</h2>
             </div>
             <table class="styled-table" id="summaryTable">
               <thead>
@@ -140,55 +118,92 @@
             </table>
           </div>
 
-          <div class="card insights-card slide-up delay-2" id="insightsCard">
+          <div class="card">
             <div class="card-header">
-              <i class="fa-solid fa-lightbulb"></i>
-              <h2>Smart Insights</h2>
+              <i class="fa-solid fa-magnifying-glass"></i>
+              <h2>Missing Values</h2>
             </div>
-            <div id="insightsGrid" class="insights-grid"></div>
+            <div class="table-wrapper" style="max-height: 250px">
+              <table class="styled-table" id="missingTable">
+                <thead>
+                  <tr>
+                    <th>Column</th>
+                    <th>Missing Count</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
           </div>
         </div>
 
-        <!-- 3. DATA CLEANING REPORT -->
-        <div class="card missing-card slide-up delay-3">
+        <!-- SMART AI INSIGHTS (Screen 7) -->
+        <div class="card slide-up delay-4" id="insightsCard">
           <div class="card-header">
-            <i class="fa-solid fa-filter"></i>
-            <h2>Cleaning Results</h2>
+            <i class="fa-solid fa-brain"></i>
+            <h2>Smart AI Insights</h2>
           </div>
-          <div class="table-container">
-            <table class="styled-table" id="missingTable">
-              <thead>
-                <tr>
-                  <th>Column</th>
-                  <th>Missing After Cleaning</th>
-                </tr>
-              </thead>
-              <tbody></tbody>
-            </table>
-          </div>
+          <div id="insightsGrid" class="insights-grid"></div>
         </div>
 
-        <!-- 4. VISUALIZATIONS -->
-        <div class="grid-container charts-section" id="chartsContainer">
-          <!-- Populated by JS -->
-        </div>
+        <!-- VISUALIZATIONS (Screen 8-10) -->
+        <div class="grid-container slide-up" id="chartsContainer"></div>
 
-        <!-- 5. HEATMAP -->
-        <div class="card heatmap-card slide-up delay-4" id="heatmapCard">
+        <!-- CORRELATION HEATMAP (Screen 8) -->
+        <div class="card slide-up" id="heatmapCard">
           <div class="card-header">
-            <i class="fa-solid fa-fire"></i>
+            <i class="fa-solid fa-fire-flame-curved"></i>
             <h2>Correlation Heatmap</h2>
           </div>
-          <div style="overflow-x: auto">
+          <div class="table-wrapper">
             <table class="heatmap-table" id="heatmapTable"></table>
           </div>
         </div>
 
-        <!-- DOWNLOAD -->
-        <div class="card results-card slide-up" style="text-align: center">
+        <!-- DOWNLOAD (Screen 5) -->
+        <div style="text-align: center; margin: 40px 0">
           <a id="downloadLink" href="#" class="btn-download">
-            <i class="fa-solid fa-download"></i> Download Cleaned CSV
+            <i class="fa-solid fa-cloud-arrow-down"></i> Download Cleaned CSV
           </a>
+        </div>
+      </div>
+
+      <!-- INITIAL UPLOAD (Screen 1 & 2) -->
+      <div class="card upload-card bounce-in" id="uploadSection">
+        <div class="card-header">
+          <i class="fa-solid fa-folder-open"></i>
+          <h2>Upload Dataset</h2>
+        </div>
+        <form id="uploadForm">
+          <div class="file-input-wrapper" id="dropZone">
+            <input
+              type="file"
+              name="file"
+              id="file"
+              class="file-input"
+              required
+              accept=".csv"
+            />
+            <div class="file-label">
+              <i class="fa-solid fa-file-csv" id="fileIcon"></i>
+              <span id="file-name-display">Choose a CSV file...</span>
+            </div>
+          </div>
+          <button type="submit" id="analyzeBtn" class="btn-primary">
+            Analyze Now <i class="fa-solid fa-bolt"></i>
+          </button>
+        </form>
+        <div
+          id="uploadLoader"
+          style="display: none; text-align: center; margin-top: 25px"
+        >
+          <i
+            class="fa-solid fa-circle-notch fa-spin fa-3x"
+            style="color: var(--accent-purple)"
+          ></i>
+          <p style="color: var(--text-secondary); margin-top: 10px">
+            Crunching your data...
+          </p>
         </div>
       </div>
     </div>

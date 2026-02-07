@@ -334,6 +334,9 @@ def upload():
         
         print("📊 Analyzing data...")
         analysis = analyze_data(original_df, cleaned_dashboard_df)
+        
+        # ⚡ PREVIEW DATA: Add sample rows for the "Cleaned Data Preview" (Screen 4)
+        analysis["sample_data"] = cleaned_dashboard_df.head(15).to_dict(orient="records")
 
         # JSON Safety: Robustly replace NaN/Inf/Non-serializable types
         import numpy as np
