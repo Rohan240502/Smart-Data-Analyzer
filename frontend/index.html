@@ -23,7 +23,6 @@
     <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   </head>
-
   <body>
     <div class="background-globes">
       <div class="globe globe-1"></div>
@@ -82,21 +81,17 @@
 
       <!-- DYNAMIC CONTENT CONTAINER -->
       <div id="dashboard" style="display: none">
-        <!-- 3. PREDICTOR -->
-        <div class="card predict-card slide-up delay-2" id="predictCard">
+        <!-- 1. AI PREDICTOR (TOP PRIORITY) -->
+        <div class="card predict-card slide-up delay-1">
           <div class="card-header">
-            <i
-              class="fa-solid fa-wand-magic-sparkles"
-              style="color: #0ea5e9"
-            ></i>
-            <h2>AI Auto-Predictor</h2>
+            <div style="display: flex; align-items: center; gap: 10px">
+              <i class="fa-solid fa-robot"></i>
+              <h2>AI Auto-Predictor</h2>
+            </div>
+            <div class="status-badge" id="modelAccuracy">Select Target</div>
           </div>
-
-          <div class="predict-form">
-            <label style="color: #cbd5e1">I want to predict:</label>
-            <select id="targetSelect" class="predict-select">
-              <!-- Populated by JS -->
-            </select>
+          <div class="predict-controls">
+            <select id="targetSelect" class="predict-select"></select>
             <button id="trainBtn" class="predict-btn">
               <i class="fa-solid fa-robot"></i> Train Model
             </button>
@@ -114,29 +109,66 @@
             class="predict-results"
             style="display: none"
           >
-            <div style="text-align: center">
-              <span id="modelAccuracy" class="accuracy-badge"></span>
-            </div>
-
-            <div style="margin: 20px 0">
-              <h4
-                style="margin-bottom: 15px; color: #cbd5e1; font-size: 0.9rem"
-              >
-                Actual vs Predicted Values:
-              </h4>
-              <div class="chart-container" style="height: 300px">
+            <div class="predict-grid">
+              <div class="predict-chart-container" style="height: 300px">
                 <canvas id="predictionChart"></canvas>
               </div>
+              <div class="feature-importance">
+                <h3>Key Drivers</h3>
+                <div id="featureList" class="feature-list"></div>
+              </div>
             </div>
-
-            <h4 style="margin-bottom: 15px; color: #cbd5e1; font-size: 0.9rem">
-              Top Drivers (Feature Importance):
-            </h4>
-            <div id="featureList" class="feature-list"></div>
           </div>
         </div>
 
-        <!-- 4. CHARTS -->
+        <!-- 2. SUMMARY STATS & INSIGHTS -->
+        <div class="grid-container">
+          <div class="card summary-card slide-up delay-2">
+            <div class="card-header">
+              <i class="fa-solid fa-calculator"></i>
+              <h2>Quick Summary</h2>
+            </div>
+            <table class="styled-table" id="summaryTable">
+              <thead>
+                <tr>
+                  <th>Metric</th>
+                  <th>Before</th>
+                  <th>After</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+
+          <div class="card insights-card slide-up delay-2" id="insightsCard">
+            <div class="card-header">
+              <i class="fa-solid fa-lightbulb"></i>
+              <h2>Smart Insights</h2>
+            </div>
+            <div id="insightsGrid" class="insights-grid"></div>
+          </div>
+        </div>
+
+        <!-- 3. DATA CLEANING REPORT -->
+        <div class="card missing-card slide-up delay-3">
+          <div class="card-header">
+            <i class="fa-solid fa-filter"></i>
+            <h2>Cleaning Results</h2>
+          </div>
+          <div class="table-container">
+            <table class="styled-table" id="missingTable">
+              <thead>
+                <tr>
+                  <th>Column</th>
+                  <th>Missing After Cleaning</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- 4. VISUALIZATIONS -->
         <div class="grid-container charts-section" id="chartsContainer">
           <!-- Populated by JS -->
         </div>
@@ -147,10 +179,8 @@
             <i class="fa-solid fa-fire"></i>
             <h2>Correlation Heatmap</h2>
           </div>
-          <div style="overflow-x: auto; padding-bottom: 10px">
-            <table class="heatmap-table" id="heatmapTable">
-              <!-- Populated by JS -->
-            </table>
+          <div style="overflow-x: auto">
+            <table class="heatmap-table" id="heatmapTable"></table>
           </div>
         </div>
 
