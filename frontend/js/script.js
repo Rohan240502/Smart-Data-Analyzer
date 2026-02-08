@@ -2,10 +2,6 @@ const API_BASE_URL = window.location.hostname === '127.0.0.1' || window.location
     ? 'http://127.0.0.1:5000' 
     : 'https://datavisionary.onrender.com';
 
-// Global state
-let charts = {};
-let latestAnalysis = null;
-
 // UI Elements
 const uploadSection = document.getElementById('uploadSection');
 const uploadForm = document.getElementById('uploadForm');
@@ -13,11 +9,35 @@ const fileInput = document.getElementById('file');
 const fileNameDisplay = document.getElementById('file-name-display');
 const uploadLoader = document.getElementById('uploadLoader');
 const dashboard = document.getElementById('dashboard');
-const trainBtn = document.getElementById('trainBtn');
 const targetSelect = document.getElementById('targetSelect');
+const trainBtn = document.getElementById('trainBtn');
 const predictLoader = document.getElementById('predictLoader');
 const predictResults = document.getElementById('predictResults');
+const chartsContainer = document.getElementById('chartsContainer');
+const newUploadBtn = document.getElementById('newUploadBtn');
+const headerSubtitle = document.getElementById('headerSubtitle');
+
 const dropZone = document.getElementById('dropZone');
+
+// --- Global State ---
+let charts = {};
+let latestAnalysis = null;
+
+// New Upload / Reset Logic
+newUploadBtn.addEventListener('click', () => {
+    uploadSection.style.display = 'block';
+    dashboard.style.display = 'none';
+    newUploadBtn.style.display = 'none';
+    headerSubtitle.style.display = 'block';
+    
+    uploadForm.reset();
+    fileNameDisplay.textContent = "Choose a CSV file...";
+    document.getElementById('fileIcon').className = 'fa-solid fa-file-csv';
+    latestAnalysis = null;
+    
+    Object.values(charts).forEach(c => { if(c && c.destroy) c.destroy(); });
+    charts = {};
+});
 
 // --- Drag & Drop Magic ---
 ['dragover', 'dragleave', 'drop'].forEach(evt => {
@@ -86,6 +106,8 @@ uploadForm.addEventListener('submit', async function (e) {
         // Success: Hide upload, show dashboard
         uploadSection.style.display = 'none';
         dashboard.style.display = 'block';
+        newUploadBtn.style.display = 'flex';
+        headerSubtitle.style.display = 'none';
         window.scrollTo({ top: 0, behavior: 'smooth' });
 
     } catch (err) {

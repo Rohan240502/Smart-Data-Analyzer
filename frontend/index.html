@@ -32,11 +32,32 @@
 
     <div class="container fade-in">
       <header class="header">
-        <div class="logo">
-          <i class="fa-solid fa-chart-line"></i>
-          <h1>Smart Data Analyzer</h1>
+        <div
+          style="
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            width: 100%;
+          "
+        >
+          <div class="logo">
+            <i class="fa-solid fa-chart-line"></i>
+            <div style="display: flex; flex-direction: column">
+              <h1>Smart Data Analyzer</h1>
+              <span class="subtitle" style="font-size: 0.9rem; opacity: 0.7"
+                >Turbo Analysis Mode Active</span
+              >
+            </div>
+          </div>
+          <button
+            id="newUploadBtn"
+            class="download-btn-chart"
+            style="width: auto; padding: 0 20px; gap: 8px; display: none"
+          >
+            <i class="fa-solid fa-rotate-left"></i> New Analysis
+          </button>
         </div>
-        <p class="subtitle">
+        <p class="subtitle" id="headerSubtitle">
           Transform your raw CSV data into actionable insights instantly.
         </p>
       </header>

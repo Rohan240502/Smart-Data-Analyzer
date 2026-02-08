@@ -437,17 +437,29 @@ def predict():
         # 4. Smart Encoding: Ignore high-cardinality text (ID/Date strings)
         from sklearn.preprocessing import LabelEncoder
         le = LabelEncoder()
+        
+        cols_to_drop = []
         for col in data.columns:
             if col != target and data[col].dtype == "object":
                 if data[col].nunique() > 50:
-                    data = data.drop(columns=[col]) # Drop IDs/Dates that ruin models
-                    print(f"🗑️ Dropped {col} (high cardinality).")
-                else:
-                    data[col] = le.fit_transform(data[col].astype(str))
+                    cols_to_drop.append(col)
+        
+        # ⚡ SAFETY: Don't drop everything! Keep at least 5 features if possible
+        if len(data.columns) - len(cols_to_drop) < 5:
+             cols_to_drop = cols_to_drop[:max(0, len(cols_to_drop) - 5)]
+             print("🛡️ Safety: Retained some complex columns to prevent empty feature set.")
+
+        data = data.drop(columns=cols_to_drop)
+        for col in data.select_dtypes(include="object").columns:
+            if col != target:
+                data[col] = le.fit_transform(data[col].astype(str))
 
         # 5. Split Features/Target
         X = data.drop(columns=[target])
         y = data[target]
+        
+        if X.empty or X.columns.empty:
+             return jsonify({"error": "This column cannot be predicted because the other columns are too complex or empty. Try a different column."}), 400
         
         # Ensure y is numeric if classification
         is_numeric_target = pd.api.types.is_numeric_dtype(y)
