@@ -404,112 +404,107 @@ def predict():
 
     target = request.form.get("target")
     if not target or target not in df.columns:
-        return jsonify({"error": "Please select a valid target column."}), 400
+        return jsonify({"error": "Please select a valid column to predict."}), 400
 
     try:
-        print(f"🔮 AI Predictor: Target={target}")
-        
-        # 1. Fresh copy and cleanup
+        # 1. Start with a fresh copy and sanitize target
         data = df.copy()
         
-        # ⚡ SMART DATE CONVERSION: Convert dates to numeric timestamps so they are usable
+        # ⚡ CRITICAL: Clean NaNs and Infs FROM THE TARGET
+        data[target] = pd.to_numeric(data[target], errors='coerce')
+        data = data.dropna(subset=[target])
+        data[target] = data[target].replace([np.inf, -np.inf], 0)
+        
+        if len(data) < 10:
+            return jsonify({"error": f"The column '{target}' has too many missing or invalid values to train a model. Try another column."}), 400
+
+        # 2. Convert Dates to Numbers (Universal)
         for col in data.columns:
             if data[col].dtype == "object":
-                # Check if it looks like a date
                 try:
-                    # Sample first few rows to check if it's a date string
-                    sample = data[col].dropna().head(5).astype(str)
-                    if sample.str.contains('-|/|:').any():
-                        data[col] = pd.to_datetime(data[col], errors='coerce')
-                        # Convert to Unix Timestamp (seconds)
-                        data[col] = data[col].apply(lambda x: x.timestamp() if pd.notnull(x) else 0)
-                        print(f"🕒 Converted {col} to numeric timestamp")
+                    # Quick date detection
+                    if data[col].astype(str).str.contains('-|/|:').any():
+                        temp_dates = pd.to_datetime(data[col], errors='coerce')
+                        if temp_dates.notnull().any():
+                             data[col] = temp_dates.apply(lambda x: x.timestamp() if pd.notnull(x) else 0)
                 except: continue
 
-        data = data.dropna(subset=[target])
-        
-        if len(data) < 5:
-            return jsonify({"error": "Not enough data rows for this target."}), 400
-
-        # 2. Handle Features (Cleanup and Encoding)
+        # 3. Handle Features (Encoding & Cleaning)
         from sklearn.preprocessing import LabelEncoder
         le = LabelEncoder()
         
-        for col in data.columns:
-            if col == target: continue
-            
+        X_cols = [c for c in data.columns if c != target]
+        for col in X_cols:
             if data[col].dtype == "object":
-                # High cardinality check for regular strings
+                # Drop IDs or very long text
                 if data[col].nunique() > 100:
                     data = data.drop(columns=[col])
                     continue
                 data[col] = le.fit_transform(data[col].astype(str))
             
-            # Final feature safety
-            if col in data.columns:
-                data[col] = pd.to_numeric(data[col], errors='coerce').fillna(0)
-                data[col] = data[col].replace([np.inf, -np.inf], 0)
+            # 🧹 DEEP CLEAN: No Infs, No NaNs in features
+            data[col] = pd.to_numeric(data[col], errors='coerce').fillna(0)
+            data[col] = data[col].replace([np.inf, -np.inf], 0)
 
-        # 3. Handle Target and Task Detection
+        # 4. Final Data Split Check
         y = data[target]
-        is_numeric_target = pd.api.types.is_numeric_dtype(y)
-        unique_targets = y.nunique()
-
-        # ⚡ SAFETY: Too many categories for Classification will crash small servers
-        if not is_numeric_target and unique_targets > 50:
-             return jsonify({
-                 "error": f"The target '{target}' has {unique_targets} different categories. AI cannot classify that accurately on a free server.",
-                 "tip": "Try predicting a column with fewer unique categories or a numeric column."
-             }), 400
-
-        if not is_numeric_target:
-            y = le.fit_transform(y.astype(str))
-            print(f"🏷️ Classification mode: {unique_targets} categories")
-
-        # 5. Split and Scale
         X = data.drop(columns=[target])
-        if X.empty:
-            return jsonify({"error": "No valid numeric features found to train the model."}), 400
+        
+        if X.empty or len(X.columns) == 0:
+            return jsonify({"error": "No useful data columns found to help with the prediction."}), 400
 
-        # Sampling for speed on large sets
-        if len(X) > 10000:
-            X = X.sample(10000, random_state=42)
-            y = y.loc[X.index]
+        # Optimization for speed
+        if len(data) > 8000:
+            data = data.sample(8000, random_state=42)
+            X = data.drop(columns=[target])
+            y = data[target]
 
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+        
+        if len(X_train) < 5:
+            return jsonify({"error": "Not enough data samples for a reliable prediction."}), 400
 
-        # 6. Train Model
-        if is_numeric_target and data[target].nunique() > 15:
+        # 5. Train Model
+        is_numeric_target = pd.api.types.is_numeric_dtype(y)
+        unique_vals = y.nunique()
+
+        if is_numeric_target and unique_vals > 20:
             model = RandomForestRegressor(n_estimators=30, max_depth=8, random_state=42)
             model_type = "Regression"
-            model.fit(X_train, y_train)
-            score = r2_score(y_test, model.predict(X_test))
-            score_text = f"{max(0, score):.1%} R² Score"
         else:
+            # Classification: Ensure y is discrete
+            y_train = y_train.astype(int) if is_numeric_target else le.fit_transform(y_train.astype(str))
+            y_test = y_test.astype(int) if is_numeric_target else le.fit_transform(y_test.astype(str))
             model = RandomForestClassifier(n_estimators=30, max_depth=8, random_state=42)
             model_type = "Classification"
-            model.fit(X_train, y_train)
-            score = accuracy_score(y_test, model.predict(X_test))
-            score_text = f"{score:.1%} Accuracy"
 
-        # 7. Get Important Features
-        importances = model.feature_importances_
-        indices = np.argsort(importances)[::-1][:5]
-        features = [{"name": X.columns[i], "importance": round(importances[i] * 100, 1)} for i in indices]
-
-        # 8. Predictions for Visualization
+        model.fit(X_train, y_train)
+        
+        # 6. Scoring
         y_pred = model.predict(X_test)
+        if model_type == "Regression":
+            score = r2_score(y_test, y_pred)
+            accuracy_text = f"{max(0, score):.1%} R² Confidence"
+        else:
+            score = accuracy_score(y_test, y_pred)
+            accuracy_text = f"{score:.1%} Accuracy"
+
+        # 7. Features & Predictions
+        importances = model.feature_importances_
+        top_idx = np.argsort(importances)[::-1][:5]
+        features = [{"name": X.columns[i], "importance": round(importances[i]*100, 1)} for i in top_idx]
+
         predictions = []
         for i in range(min(15, len(y_test))):
             predictions.append({
-                "actual": float(y_test.iloc[i]),
+                "actual": float(y_test[i]) if hasattr(y_test, 'iloc') else float(y_test.iloc[i]),
                 "predicted": float(y_pred[i]),
                 "label": f"#{i+1}"
             })
 
         return jsonify({
             "model_type": model_type,
-            "accuracy": score_text,
+            "accuracy": accuracy_text,
             "features": features,
             "predictions": predictions,
             "target_name": target
@@ -517,8 +512,12 @@ def predict():
 
     except Exception as e:
         import traceback
-        print(f"⛔ CRITICAL ML ERROR:\n{traceback.format_exc()}")
-        return jsonify({"error": "The model couldn't process this specific column combinations.", "details": str(e)}), 500
+        print(f"⛔ PREDICT CRASH:\n{traceback.format_exc()}")
+        return jsonify({
+            "error": "Model training failed due to data inconsistencies.",
+            "details": str(e),
+            "tip": "This usually happens if a column has mixed text and numbers. Try a different column."
+        }), 500
 
 if __name__ == "__main__":
     app.run(debug=True)
