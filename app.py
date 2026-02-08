@@ -404,110 +404,95 @@ def predict():
 
     target = request.form.get("target")
     if not target or target not in df.columns:
-        return jsonify({"error": f"Invalid target column: {target}"}), 400
+        return jsonify({"error": "Please select a valid target column."}), 400
 
     try:
-        # ⚡ TURBO MODE: Extreme optimizations for Render Free Tier
-        print(f"🔮 Training Turbo AI for target: {target}")
+        print(f"🔮 AI Predictor: Target={target}")
         
-        # 1. Feature Selection: Keep target + top 20 most relevant columns only
-        # This prevents OOM (Out of Memory) crashes on large datasets
-        all_cols = df.columns.tolist()
-        if len(all_cols) > 25:
-             # Just keep a subset to avoid memory bloat
-             num_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-             num_cols = [c for c in num_cols if c != target][:20]
-             subset = [target] + num_cols
-             data = df[subset].copy()
-             print(f"✂️ Column reduction: Kept 20 numeric columns to save memory.")
-        else:
-             data = df.copy()
-
-        # 2. Handle Missing Values
+        # 1. Start with a fresh copy and drop target NaNs
+        data = df.copy()
         data = data.dropna(subset=[target])
         
-        # 3. Sampling: 5,000 rows is the "sweet spot" for speed vs accuracy on free tier
-        if len(data) > 5000:
-            data = data.sample(5000, random_state=42)
-            print("📦 Aggressive Sampling: 5,000 rows.")
+        if len(data) < 5:
+            return jsonify({"error": "Not enough data points (need at least 5 rows with values)."}), 400
 
-        if len(data) < 10:
-             return jsonify({"error": "Not enough data points with valid target values."}), 400
+        # 2. Simple Feature Selection (Keep top 30)
+        num_cols = data.select_dtypes(include=[np.number]).columns.tolist()
+        cat_cols = data.select_dtypes(include=["object"]).columns.tolist()
+        
+        # Priority: Keep all columns if small, otherwise limit to 30
+        if data.shape[1] > 30:
+            cols_to_keep = [target] + num_cols[:20] + cat_cols[:10]
+            data = data[list(set(cols_to_keep))]
 
-        # 4. Smart Encoding: Ignore high-cardinality text (ID/Date strings)
+        # 3. Handle Features (Encoding & Cleaning)
         from sklearn.preprocessing import LabelEncoder
         le = LabelEncoder()
         
-        cols_to_drop = []
         for col in data.columns:
-            if col != target and data[col].dtype == "object":
-                if data[col].nunique() > 50:
-                    cols_to_drop.append(col)
-        
-        # ⚡ SAFETY: Don't drop everything! Keep at least 5 features if possible
-        if len(data.columns) - len(cols_to_drop) < 5:
-             cols_to_drop = cols_to_drop[:max(0, len(cols_to_drop) - 5)]
-             print("🛡️ Safety: Retained some complex columns to prevent empty feature set.")
+            if col == target: continue
+            
+            if data[col].dtype == "object":
+                # Drop extremely complex text (like unique IDs/Descriptions)
+                if data[col].nunique() > 100:
+                    data = data.drop(columns=[col])
+                else:
+                    data[col] = le.fit_transform(data[col].astype(str))
+            
+            # Final safety check for NaNs/Infs in features
+            if col in data.columns:
+                data[col] = pd.to_numeric(data[col], errors='coerce').fillna(0)
+                data[col] = data[col].replace([np.inf, -np.inf], 0)
 
-        data = data.drop(columns=cols_to_drop)
-        for col in data.select_dtypes(include="object").columns:
-            if col != target:
-                data[col] = le.fit_transform(data[col].astype(str))
-
-        # 5. Split Features/Target
-        X = data.drop(columns=[target])
+        # 4. Handle Target
         y = data[target]
-        
-        if X.empty or X.columns.empty:
-             return jsonify({"error": "This column cannot be predicted because the other columns are too complex or empty. Try a different column."}), 400
-        
-        # Ensure y is numeric if classification
         is_numeric_target = pd.api.types.is_numeric_dtype(y)
+        
         if not is_numeric_target:
             y = le.fit_transform(y.astype(str))
+            print("🏷️ Target encoded for Classification")
 
-        # 6. Scaling
-        num_features = X.select_dtypes(include=[np.number]).columns
-        if not num_features.empty:
-            try:
-                from sklearn.preprocessing import StandardScaler
-                scaler = StandardScaler()
-                X[num_features] = scaler.fit_transform(X[num_features])
-            except: pass
+        # 5. Split and Scale
+        X = data.drop(columns=[target])
+        if X.empty:
+            return jsonify({"error": "No valid numeric features found to train the model."}), 400
 
-        # 7. Train Model (Ultralight Settings)
+        # Sampling for speed on large sets
+        if len(X) > 10000:
+            X = X.sample(10000, random_state=42)
+            y = y.loc[X.index]
+
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-        
-        # Low estimators + Max Depth = Reliable & Fast
-        if is_numeric_target and data[target].nunique() > 10:
-            model = RandomForestRegressor(n_estimators=20, max_depth=10, random_state=42)
+
+        # 6. Train Model
+        if is_numeric_target and data[target].nunique() > 15:
+            model = RandomForestRegressor(n_estimators=30, max_depth=8, random_state=42)
+            model_type = "Regression"
             model.fit(X_train, y_train)
             score = r2_score(y_test, model.predict(X_test))
-            score_text = f"{score:.1%} R² Score"
-            model_type = "Regression"
+            score_text = f"{max(0, score):.1%} R² Score"
         else:
-            model = RandomForestClassifier(n_estimators=20, max_depth=10, random_state=42)
+            model = RandomForestClassifier(n_estimators=30, max_depth=8, random_state=42)
+            model_type = "Classification"
             model.fit(X_train, y_train)
             score = accuracy_score(y_test, model.predict(X_test))
             score_text = f"{score:.1%} Accuracy"
-            model_type = "Classification"
 
-        # 8. Feature Importance
+        # 7. Get Important Features
         importances = model.feature_importances_
         indices = np.argsort(importances)[::-1][:5]
         features = [{"name": X.columns[i], "importance": round(importances[i] * 100, 1)} for i in indices]
 
-        # 9. Predictions for Chart
+        # 8. Predictions for Visualization
         y_pred = model.predict(X_test)
         predictions = []
         for i in range(min(15, len(y_test))):
             predictions.append({
                 "actual": float(y_test.iloc[i]),
                 "predicted": float(y_pred[i]),
-                "label": f"P{i+1}"
+                "label": f"#{i+1}"
             })
 
-        print(f"✅ Success! {model_type} trained.")
         return jsonify({
             "model_type": model_type,
             "accuracy": score_text,
@@ -518,8 +503,8 @@ def predict():
 
     except Exception as e:
         import traceback
-        print(f"❌ ML ERROR: {traceback.format_exc()}")
-        return jsonify({"error": "Training failed due to data complexity.", "details": str(e)}), 500
+        print(f"⛔ CRITICAL ML ERROR:\n{traceback.format_exc()}")
+        return jsonify({"error": "The model couldn't process this specific column combinations.", "details": str(e)}), 500
 
 if __name__ == "__main__":
     app.run(debug=True)
