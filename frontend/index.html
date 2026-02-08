@@ -102,6 +102,50 @@
           </div>
         </div>
 
+        <!-- SMART AI INSIGHTS CARD -->
+        <div
+          class="card slide-up delay-2"
+          id="aiInsightCard"
+          style="
+            display: none;
+            border: 1px solid var(--accent-purple);
+            background: rgba(168, 85, 247, 0.05);
+          "
+        >
+          <div class="card-header" style="justify-content: space-between">
+            <div style="display: flex; align-items: center; gap: 10px">
+              <i
+                class="fa-solid fa-brain"
+                style="color: var(--accent-purple)"
+              ></i>
+              <h2>Smart AI Executive Insight</h2>
+            </div>
+            <button
+              id="askAiBtn"
+              class="predict-btn"
+              style="
+                width: auto;
+                padding: 5px 15px;
+                font-size: 0.8rem;
+                background: var(--accent-purple);
+              "
+            >
+              <i class="fa-solid fa-wand-magic-sparkles"></i> Analyze Results
+            </button>
+          </div>
+          <div
+            id="aiInsightContent"
+            style="
+              padding: 15px;
+              line-height: 1.6;
+              color: var(--text-secondary);
+            "
+          >
+            Training model... once finished, click "Analyze Results" for a deep
+            dive into these patterns.
+          </div>
+        </div>
+
         <!-- CLEANED DATA PREVIEW (Screen 4) -->
         <div class="card preview-card slide-up delay-2">
           <div class="preview-header">

@@ -16,8 +16,10 @@ const predictResults = document.getElementById('predictResults');
 const chartsContainer = document.getElementById('chartsContainer');
 const newUploadBtn = document.getElementById('newUploadBtn');
 const headerSubtitle = document.getElementById('headerSubtitle');
-
 const dropZone = document.getElementById('dropZone');
+const askAiBtn = document.getElementById('askAiBtn');
+const aiInsightContent = document.getElementById('aiInsightContent');
+const aiInsightCard = document.getElementById('aiInsightCard');
 
 // --- Global State ---
 let charts = {};
@@ -183,29 +185,56 @@ function renderPreviewTable(rows) {
 // --- Screen 12-14: Model Training ---
 trainBtn.addEventListener('click', async () => {
     const target = targetSelect.value;
+    if (!target) return;
+
     predictLoader.style.display = 'inline-block';
     predictResults.style.display = 'none';
+    trainBtn.disabled = true;
+
+    const fd = new FormData();
+    fd.append('target', target);
 
     try {
-        const fd = new FormData();
-        fd.append('target', target);
-        const res = await fetch(`${API_BASE_URL}/predict`, { method: 'POST', body: fd });
+        const res = await fetch(`${API_BASE_URL}/predict`, {
+            method: 'POST',
+            body: fd
+        });
         
-        // ⚡ SAFETY: Check if response is actually JSON
-        const contentType = res.headers.get("content-type");
-        if (!contentType || !contentType.includes("application/json")) {
-            const text = await res.text();
-            console.error("Non-JSON response:", text);
-            throw new Error('The server returned an error page instead of data. The backend might be overloaded or crashing.');
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Training failed');
+
+        renderPredictionResults(data);
+        
+        // Show AI Insight Card after successful training
+        if (aiInsightCard) {
+            aiInsightCard.style.display = 'block';
+            aiInsightContent.innerHTML = 'AI Model Ready. Click "Analyze Results" for expert insights.';
         }
 
-        const data = await res.json();
-        if (data.error) throw new Error(data.error);
-        renderPredictionResults(data);
     } catch (err) {
         alert('Model Training Error: ' + err.message);
     } finally {
         predictLoader.style.display = 'none';
+        trainBtn.disabled = false;
+    }
+});
+
+// --- Ask Gemini ---
+askAiBtn.addEventListener('click', async () => {
+    askAiBtn.disabled = true;
+    aiInsightContent.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Gemini is analyzing your data patterns...';
+    
+    try {
+        const res = await fetch(`${API_BASE_URL}/ask-ai`, { method: 'POST' });
+        const data = await res.json();
+        
+        if (!res.ok) throw new Error(data.error || 'AI Analysis failed');
+        
+        aiInsightContent.innerHTML = data.insight;
+    } catch (err) {
+        aiInsightContent.innerHTML = `<span style="color: #ff4444;">${err.message}</span>`;
+    } finally {
+        askAiBtn.disabled = false;
     }
 });
 

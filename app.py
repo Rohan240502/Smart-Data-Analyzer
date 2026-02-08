@@ -1,6 +1,21 @@
 from flask import Flask, render_template, request, send_file, jsonify
-import pandas as pd
 import os
+import io
+import json
+import pandas as pd
+import numpy as np
+from flask import Flask, request, jsonify, send_file
+from flask_cors import CORS
+from dotenv import load_dotenv
+
+# Try to import Google Generative AI
+try:
+    import google.generativeai as genai
+    GEMINI_AVAILABLE = True
+except ImportError:
+    GEMINI_AVAILABLE = False
+
+load_dotenv()
 
 from reportlab.lib.pagesizes import letter, A4
 from reportlab.pdfgen import canvas
@@ -12,21 +27,28 @@ import matplotlib
 matplotlib.use('Agg') # Use non-interactive backend
 import matplotlib.pyplot as plt
 import seaborn as sns
-from flask_cors import CORS
+
 
 app = Flask(__name__)
-CORS(app) # Enable CORS for all routes
+CORS(app)
 
+# --- Configuration ---
 UPLOAD_FOLDER = "uploads"
 PROCESSED_FOLDER = "processed"
-
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(PROCESSED_FOLDER, exist_ok=True)
-
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 app.config["PROCESSED_FOLDER"] = PROCESSED_FOLDER
 
-# Global variable to store uploaded dataframe
+# Configure Gemini
+api_key = os.getenv("GOOGLE_API_KEY")
+if api_key and GEMINI_AVAILABLE:
+    genai.configure(api_key=api_key)
+    print("✨ Gemini AI: Connected & Ready")
+else:
+    print("⚠️ Gemini AI: Key missing (GOOGLE_API_KEY). Internal ML only.")
+
+# Global state to keep the last uploaded dataframe in memory
 df = None
 # Global variable to store latest prediction for the report
 latest_prediction = None
@@ -494,21 +516,26 @@ def predict():
         top_idx = np.argsort(importances)[::-1][:5]
         features = [{"name": X.columns[i], "importance": round(importances[i]*100, 1)} for i in top_idx]
 
+        # Convert y_test to a predictable format for indexing
+        y_test_list = y_test.tolist() if hasattr(y_test, 'tolist') else list(y_test)
+        
         predictions = []
-        for i in range(min(15, len(y_test))):
+        for i in range(min(15, len(y_test_list))):
             predictions.append({
-                "actual": float(y_test[i]) if hasattr(y_test, 'iloc') else float(y_test.iloc[i]),
+                "actual": float(y_test_list[i]),
                 "predicted": float(y_pred[i]),
                 "label": f"#{i+1}"
             })
 
-        return jsonify({
+        global latest_prediction
+        latest_prediction = {
             "model_type": model_type,
             "accuracy": accuracy_text,
             "features": features,
             "predictions": predictions,
             "target_name": target
-        })
+        }
+        return jsonify(latest_prediction)
 
     except Exception as e:
         import traceback
@@ -518,6 +545,51 @@ def predict():
             "details": str(e),
             "tip": "This usually happens if a column has mixed text and numbers. Try a different column."
         }), 500
+
+@app.route("/ask-ai", methods=["POST"])
+def ask_ai():
+    if not api_key or not GEMINI_AVAILABLE:
+        return jsonify({"error": "Google Gemini API Key is missing. Please add GOOGLE_API_KEY to environment variables."}), 400
+        
+    global latest_prediction
+    if not latest_prediction:
+        return jsonify({"error": "No prediction results to analyze. Please train a model first."}), 400
+
+    try:
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        
+        # Prepare context for Gemini
+        context = f"""
+        Dataset column to predict: {latest_prediction['target_name']}
+        Algorithm used: {latest_prediction['model_type']}
+        Model Confidence/Accuracy: {latest_prediction['accuracy']}
+        
+        Most Important Factors (Drivers):
+        {json.dumps(latest_prediction['features'], indent=2)}
+        
+        Recent Prediction Samples (Actual vs Predicted):
+        {json.dumps(latest_prediction['predictions'][:10], indent=2)}
+        """
+        
+        prompt = f"""
+        You are an expert Data Scientist. Analyze these AI results and provide 3 ultra-short professional "Executive Insights" (in bullet points).
+        Focus on:
+        1. Whether the model is reliable based on accuracy.
+        2. What the 'Top Drivers' mean for this specific business/data case.
+        3. One 'Smart Forecast' or action the user should take.
+        
+        Results Context:
+        {context}
+        
+        Response format: <b>Executive summary:</b><br/>• Point 1<br/>• Point 2<br/>• Point 3
+        Keep it very concise.
+        """
+        
+        response = model.generate_content(prompt)
+        return jsonify({"insight": response.text})
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
     app.run(debug=True)

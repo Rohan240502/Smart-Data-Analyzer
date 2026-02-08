@@ -8,3 +8,5 @@ scikit-learn
 reportlab
 gunicorn
 flask-cors
+google-generativeai
+python-dotenv
