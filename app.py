@@ -403,118 +403,99 @@ def predict():
         return jsonify({"error": "No dataset uploaded"}), 400
 
     target = request.form.get("target")
-    if target not in df.columns:
-        return jsonify({"error": "Invalid target column"}), 400
+    if not target or target not in df.columns:
+        return jsonify({"error": f"Invalid target column: {target}"}), 400
 
-    # Prepare Data
-    data = df.copy()
-    
-    # 1. Handle Missing Values (Flexible approach)
-    # Only drop rows where target is NaN (we can't predict nothing)
-    data = data.dropna(subset=[target])
-    
-    if len(data) < 10:
-        return jsonify({"error": "Not enough data points with valid target values. Try a different column."}), 400
-
-    # For other columns, fill NaNs with mean (numeric) or mode (category) to keep as many rows as possible
-    num_cols = data.select_dtypes(include=[np.number]).columns
-    data[num_cols] = data[num_cols].fillna(data[num_cols].mean().fillna(0))
-    
-    cat_cols = data.select_dtypes(exclude=[np.number]).columns
-    for col in cat_cols:
-         data[col] = data[col].fillna(data[col].mode()[0] if not data[col].mode().empty else "Unknown")
-
-    # ⚡ SPEED OPTIMIZATION: Sampling for fast training on free tier
-    if len(data) > 10000:
-        print(f"📦 Large training set. Sampling 10,000 rows for speed...")
-        data = data.sample(10000, random_state=42)
-
-    # 2. Encode Categorical Data
-    le = LabelEncoder()
-    cat_cols_to_encode = data.select_dtypes(include="object").columns
-    for col in cat_cols_to_encode:
-        data[col] = le.fit_transform(data[col].astype(str))
-
-    # 3. Split Features/Target
-    X = data.drop(columns=[target])
-    y = data[target]
-    
-    # ⚡ SCALE ONLY NUMERIC FEATURES
-    num_features = X.select_dtypes(include=[np.number]).columns
-    if not num_features.empty:
-        try:
-            from sklearn.preprocessing import StandardScaler
-            scaler = StandardScaler()
-            X[num_features] = scaler.fit_transform(X[num_features])
-        except: pass
-
-    # 4. Train Model (Optimized Estimators for speed)
     try:
-        is_numeric = pd.api.types.is_numeric_dtype(df[target])
+        # ⚡ TURBO MODE: Extreme optimizations for Render Free Tier
+        print(f"🔮 Training Turbo AI for target: {target}")
+        
+        # 1. Feature Selection: Keep target + top 20 most relevant columns only
+        # This prevents OOM (Out of Memory) crashes on large datasets
+        all_cols = df.columns.tolist()
+        if len(all_cols) > 25:
+             # Just keep a subset to avoid memory bloat
+             num_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+             num_cols = [c for c in num_cols if c != target][:20]
+             subset = [target] + num_cols
+             data = df[subset].copy()
+             print(f"✂️ Column reduction: Kept 20 numeric columns to save memory.")
+        else:
+             data = df.copy()
+
+        # 2. Handle Missing Values
+        data = data.dropna(subset=[target])
+        
+        # 3. Sampling: 5,000 rows is the "sweet spot" for speed vs accuracy on free tier
+        if len(data) > 5000:
+            data = data.sample(5000, random_state=42)
+            print("📦 Aggressive Sampling: 5,000 rows.")
+
+        if len(data) < 10:
+             return jsonify({"error": "Not enough data points with valid target values."}), 400
+
+        # 4. Smart Encoding: Ignore high-cardinality text (ID/Date strings)
+        from sklearn.preprocessing import LabelEncoder
+        le = LabelEncoder()
+        for col in data.columns:
+            if col != target and data[col].dtype == "object":
+                if data[col].nunique() > 50:
+                    data = data.drop(columns=[col]) # Drop IDs/Dates that ruin models
+                    print(f"🗑️ Dropped {col} (high cardinality).")
+                else:
+                    data[col] = le.fit_transform(data[col].astype(str))
+
+        # 5. Split Features/Target
+        X = data.drop(columns=[target])
+        y = data[target]
+        
+        # Ensure y is numeric if classification
+        is_numeric_target = pd.api.types.is_numeric_dtype(y)
+        if not is_numeric_target:
+            y = le.fit_transform(y.astype(str))
+
+        # 6. Scaling
+        num_features = X.select_dtypes(include=[np.number]).columns
+        if not num_features.empty:
+            try:
+                from sklearn.preprocessing import StandardScaler
+                scaler = StandardScaler()
+                X[num_features] = scaler.fit_transform(X[num_features])
+            except: pass
+
+        # 7. Train Model (Ultralight Settings)
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
         
-        # Use 50 estimators instead of 100 for faster training on Render Free
-        if is_numeric and df[target].nunique() > 10:
-            model = RandomForestRegressor(n_estimators=50, random_state=42)
+        # Low estimators + Max Depth = Reliable & Fast
+        if is_numeric_target and data[target].nunique() > 10:
+            model = RandomForestRegressor(n_estimators=20, max_depth=10, random_state=42)
             model.fit(X_train, y_train)
             score = r2_score(y_test, model.predict(X_test))
-            score_text = f"{score:.2%} (R² Score)"
+            score_text = f"{score:.1%} R² Score"
             model_type = "Regression"
         else:
-            model = RandomForestClassifier(n_estimators=50, random_state=42)
+            model = RandomForestClassifier(n_estimators=20, max_depth=10, random_state=42)
             model.fit(X_train, y_train)
             score = accuracy_score(y_test, model.predict(X_test))
-            score_text = f"{score:.2%} (Accuracy)"
+            score_text = f"{score:.1%} Accuracy"
             model_type = "Classification"
 
-        # 5. Feature Importance
+        # 8. Feature Importance
         importances = model.feature_importances_
-        indices = np.argsort(importances)[::-1][:5] # Top 5
-        
-        features = []
-        for i in indices:
-            features.append({
-                "name": X.columns[i],
-                "importance": round(importances[i] * 100, 1)
-            })
+        indices = np.argsort(importances)[::-1][:5]
+        features = [{"name": X.columns[i], "importance": round(importances[i] * 100, 1)} for i in indices]
 
-        # 6. Generate Predictions (first 20 test samples for visualization)
+        # 9. Predictions for Chart
         y_pred = model.predict(X_test)
         predictions = []
-        sample_size = min(20, len(y_test))  # Show max 20 points
-        
-        for i in range(sample_size):
-            # Try to get a meaningful label (date from original data)
-            try:
-                idx = y_test.index[i]
-                # Try to find a date column in the original dataframe
-                if 'from_date' in df.columns:
-                    label = str(df.loc[idx, 'from_date'])
-                elif 'to_date' in df.columns:
-                    label = str(df.loc[idx, 'to_date'])
-                elif 'date' in df.columns:
-                    label = str(df.loc[idx, 'date'])
-                else:
-                    # If no date column, just show the index
-                    label = str(idx)
-            except:
-                label = f"Sample {i + 1}"
-            
+        for i in range(min(15, len(y_test))):
             predictions.append({
                 "actual": float(y_test.iloc[i]),
                 "predicted": float(y_pred[i]),
-                "label": label
+                "label": f"P{i+1}"
             })
 
-        # Store latest prediction globally for report
-        global latest_prediction
-        latest_prediction = {
-            "model_type": model_type,
-            "accuracy": score_text,
-            "features": features,
-            "target": target
-        }
-
+        print(f"✅ Success! {model_type} trained.")
         return jsonify({
             "model_type": model_type,
             "accuracy": score_text,
@@ -524,7 +505,9 @@ def predict():
         })
 
     except Exception as e:
-        return jsonify({"error": f"Training failed: {str(e)}"}), 500
+        import traceback
+        print(f"❌ ML ERROR: {traceback.format_exc()}")
+        return jsonify({"error": "Training failed due to data complexity.", "details": str(e)}), 500
 
 if __name__ == "__main__":
     app.run(debug=True)
