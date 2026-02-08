@@ -409,23 +409,29 @@ def predict():
     try:
         print(f"🔮 AI Predictor: Target={target}")
         
-        # 1. Start with a fresh copy and drop target NaNs
+        # 1. Fresh copy and cleanup
         data = df.copy()
+        
+        # ⚡ SMART DATE CONVERSION: Convert dates to numeric timestamps so they are usable
+        for col in data.columns:
+            if data[col].dtype == "object":
+                # Check if it looks like a date
+                try:
+                    # Sample first few rows to check if it's a date string
+                    sample = data[col].dropna().head(5).astype(str)
+                    if sample.str.contains('-|/|:').any():
+                        data[col] = pd.to_datetime(data[col], errors='coerce')
+                        # Convert to Unix Timestamp (seconds)
+                        data[col] = data[col].apply(lambda x: x.timestamp() if pd.notnull(x) else 0)
+                        print(f"🕒 Converted {col} to numeric timestamp")
+                except: continue
+
         data = data.dropna(subset=[target])
         
         if len(data) < 5:
-            return jsonify({"error": "Not enough data points (need at least 5 rows with values)."}), 400
+            return jsonify({"error": "Not enough data rows for this target."}), 400
 
-        # 2. Simple Feature Selection (Keep top 30)
-        num_cols = data.select_dtypes(include=[np.number]).columns.tolist()
-        cat_cols = data.select_dtypes(include=["object"]).columns.tolist()
-        
-        # Priority: Keep all columns if small, otherwise limit to 30
-        if data.shape[1] > 30:
-            cols_to_keep = [target] + num_cols[:20] + cat_cols[:10]
-            data = data[list(set(cols_to_keep))]
-
-        # 3. Handle Features (Encoding & Cleaning)
+        # 2. Handle Features (Cleanup and Encoding)
         from sklearn.preprocessing import LabelEncoder
         le = LabelEncoder()
         
@@ -433,24 +439,32 @@ def predict():
             if col == target: continue
             
             if data[col].dtype == "object":
-                # Drop extremely complex text (like unique IDs/Descriptions)
+                # High cardinality check for regular strings
                 if data[col].nunique() > 100:
                     data = data.drop(columns=[col])
-                else:
-                    data[col] = le.fit_transform(data[col].astype(str))
+                    continue
+                data[col] = le.fit_transform(data[col].astype(str))
             
-            # Final safety check for NaNs/Infs in features
+            # Final feature safety
             if col in data.columns:
                 data[col] = pd.to_numeric(data[col], errors='coerce').fillna(0)
                 data[col] = data[col].replace([np.inf, -np.inf], 0)
 
-        # 4. Handle Target
+        # 3. Handle Target and Task Detection
         y = data[target]
         is_numeric_target = pd.api.types.is_numeric_dtype(y)
-        
+        unique_targets = y.nunique()
+
+        # ⚡ SAFETY: Too many categories for Classification will crash small servers
+        if not is_numeric_target and unique_targets > 50:
+             return jsonify({
+                 "error": f"The target '{target}' has {unique_targets} different categories. AI cannot classify that accurately on a free server.",
+                 "tip": "Try predicting a column with fewer unique categories or a numeric column."
+             }), 400
+
         if not is_numeric_target:
             y = le.fit_transform(y.astype(str))
-            print("🏷️ Target encoded for Classification")
+            print(f"🏷️ Classification mode: {unique_targets} categories")
 
         # 5. Split and Scale
         X = data.drop(columns=[target])
