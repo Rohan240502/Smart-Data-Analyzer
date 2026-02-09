@@ -556,7 +556,8 @@ def ask_ai():
         return jsonify({"error": "No prediction results to analyze. Please train a model first."}), 400
 
     try:
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        # Use 'gemini-pro' for maximum compatibility across all API versions
+        model = genai.GenerativeModel('gemini-pro')
         
         # Prepare context for Gemini
         context = f"""
