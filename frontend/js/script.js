@@ -367,3 +367,60 @@ document.addEventListener('click', function (e) {
         link.click();
     }
 });
+// --- AI Data Chat Logic ---
+const chatInput = document.getElementById('chatInput');
+const sendChatBtn = document.getElementById('sendChatBtn');
+const chatWindow = document.getElementById('chatWindow');
+
+async function sendChatMessage() {
+    const query = chatInput.value.trim();
+    if (!query || sendChatBtn.disabled) return;
+
+    // Add user message
+    addMessageToChat(query, 'user');
+    chatInput.value = '';
+    
+    // Disable UI
+    sendChatBtn.disabled = true;
+    const loaderId = addMessageToChat('Gemini is thinking...', 'bot thinking');
+
+    try {
+        const res = await fetch(`${API_BASE_URL}/chat-data`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query })
+        });
+        
+        const data = await res.json();
+        const botMsg = document.getElementById(loaderId);
+        
+        if (!res.ok) throw new Error(data.error || 'Chat failed');
+        
+        botMsg.innerHTML = data.response.replace(/\n/g, '<br/>');
+        botMsg.classList.remove('thinking');
+        
+    } catch (err) {
+        const botMsg = document.getElementById(loaderId);
+        botMsg.innerHTML = `<span style="color: #ff4444;">Error: ${err.message}</span>`;
+        botMsg.classList.remove('thinking');
+    } finally {
+        sendChatBtn.disabled = false;
+        chatWindow.scrollTo({ top: chatWindow.scrollHeight, behavior: 'smooth' });
+    }
+}
+
+function addMessageToChat(text, type) {
+    const id = 'chat_' + Date.now();
+    const div = document.createElement('div');
+    div.id = id;
+    div.className = `chat-message ${type}`;
+    div.innerHTML = text;
+    chatWindow.appendChild(div);
+    chatWindow.scrollTo({ top: chatWindow.scrollHeight, behavior: 'smooth' });
+    return id;
+}
+
+sendChatBtn.addEventListener('click', sendChatMessage);
+chatInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') sendChatMessage();
+});
