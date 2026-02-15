@@ -106,7 +106,7 @@ def clean_nans(obj):
         return int(obj)
     elif pd.isna(obj): # Catch pandas specific NAs
         return None
-    return obj
+    return obj 
 
 # -----------------------------
 # Data Analysis (Performance Focused)
