@@ -42,10 +42,13 @@ app.config["PROCESSED_FOLDER"] = PROCESSED_FOLDER
 # Configure Gemini
 api_key = os.getenv("GOOGLE_API_KEY")
 if api_key and GEMINI_AVAILABLE:
-    genai.configure(api_key=api_key)
-    print("✨ Gemini AI: Connected & Ready")
+    try:
+        genai.configure(api_key=api_key)
+        print("✨ Gemini AI: Configured successfully")
+    except Exception as e:
+        print(f"❌ Gemini AI: Configuration failed: {e}")
 else:
-    print("⚠️ Gemini AI: Key missing (GOOGLE_API_KEY). Internal ML only.")
+    print("⚠️ Gemini AI: Key missing (GOOGLE_API_KEY) or library not installed.")
 
 # Global state to keep the last uploaded dataframe in memory
 df = None
@@ -557,22 +560,33 @@ def ask_ai():
 
     try:
         # Try different model names to handle potential regional 404s
-        model_names = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro']
+        model_names = ['gemini-1.5-flash', 'gemini-1.5-flash-latest', 'gemini-1.5-pro', 'gemini-1.0-pro', 'gemini-pro']
         model = None
         last_error = ""
 
+        print(f"🤖 AI Insight: Attempting to find a working model...")
         for name in model_names:
             try:
-                model = genai.GenerativeModel(name)
-                # Test the model with a tiny query if possible, or just proceed
-                # Instead of testing (slow), we'll try to catch the error in generation
-                break
+                print(f"  - Testing {name}...")
+                temp_model = genai.GenerativeModel(name)
+                # Test the model with a tiny query
+                response = temp_model.generate_content("ping", generation_config={"max_output_tokens": 1})
+                if response:
+                    model = temp_model
+                    print(f"  ✅ {name} is working!")
+                    break
             except Exception as e:
                 last_error = str(e)
+                print(f"  ❌ {name} failed: {last_error}")
                 continue
         
         if not model:
-            return jsonify({"error": f"Could not find a valid Gemini model. Last error: {last_error}"}), 404
+            print(f"❌ AI Insight: All models failed. Last error: {last_error}")
+            return jsonify({
+                "error": "Gemini AI Connection Failed",
+                "details": last_error,
+                "tip": "Check if your API key has 'Generative Language API' enabled in Google Cloud Console."
+            }), 404
         
         # Prepare context for Gemini - ENSURE IT IS JSON SAFE
         safe_prediction = clean_nans(latest_prediction)
@@ -699,20 +713,31 @@ def chat_data():
 
     try:
         # Try different model names to handle potential regional 404s
-        model_names = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro']
+        model_names = ['gemini-1.5-flash', 'gemini-1.5-flash-latest', 'gemini-1.5-pro', 'gemini-1.0-pro', 'gemini-pro']
         model = None
         last_error = ""
 
+        print(f"💬 Chat AI: Searching for available model...")
         for name in model_names:
             try:
-                model = genai.GenerativeModel(name)
-                break
+                temp_model = genai.GenerativeModel(name)
+                try:
+                    # Test if the model exists and is responsive
+                    response = temp_model.generate_content("ping", generation_config={"max_output_tokens": 1})
+                    if response:
+                        model = temp_model
+                        print(f"  ✅ {name} is working!")
+                        break
+                except Exception as inner_e:
+                    last_error = str(inner_e)
+                    continue
             except Exception as e:
                 last_error = str(e)
                 continue
         
         if not model:
-            return jsonify({"error": f"Could not find a valid Gemini model. {last_error}"}), 404
+            print(f"❌ Chat AI: All models failed. Last error: {last_error}")
+            return jsonify({"error": f"Gemini Cloud Error: {last_error}"}), 404
         
         # Prepare context
         summary = df.describe(include='all').to_string()
