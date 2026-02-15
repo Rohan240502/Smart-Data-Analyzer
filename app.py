@@ -535,7 +535,10 @@ def predict():
             "predictions": predictions,
             "target_name": target
         }
-        return jsonify(latest_prediction)
+        
+        # ⚡ JSON Safety: Clean NaNs before sending
+        safe_prediction = clean_nans(latest_prediction)
+        return jsonify(safe_prediction)
 
     except Exception as e:
         import traceback
@@ -591,6 +594,81 @@ def ask_ai():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+@app.route("/download-report")
+def download_report():
+    global df, latest_prediction
+    if df is None:
+        return "No data analyzed yet", 400
+
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4)
+    styles = getSampleStyleSheet()
+    
+    # Custom Styles
+    title_style = ParagraphStyle('Title', parent=styles['Heading1'], alignment=1, spaceAfter=20, textColor=colors.HexColor("#a855f7"))
+    heading_style = ParagraphStyle('Heading', parent=styles['Heading2'], spaceBefore=10, spaceAfter=10, textColor=colors.HexColor("#0ea5e9"))
+    body_style = styles['BodyText']
+
+    elements = []
+    
+    # 1. Title
+    elements.append(Paragraph("Smart Data Analyzer - Executive Report", title_style))
+    elements.append(Spacer(1, 12))
+    
+    # 2. Data Overview
+    elements.append(Paragraph("Data Overview", heading_style))
+    data_info = [
+        ["Metric", "Value"],
+        ["Total Rows", str(len(df))],
+        ["Total Columns", str(len(df.columns))],
+        ["Missing Values", str(df.isnull().sum().sum())]
+    ]
+    t = Table(data_info, colWidths=[150, 100])
+    t.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#a855f7")),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('GRID', (0, 0), (-1, -1), 1, colors.grey)
+    ]))
+    elements.append(t)
+    elements.append(Spacer(1, 20))
+
+    # 3. AI Predictive Model Summary
+    if latest_prediction:
+        elements.append(Paragraph("AI Prediction Analysis", heading_style))
+        elements.append(Paragraph(f"<b>Target Variable:</b> {latest_prediction['target_name']}", body_style))
+        elements.append(Paragraph(f"<b>Model Type:</b> {latest_prediction['model_type']}", body_style))
+        elements.append(Paragraph(f"<b>Performance:</b> {latest_prediction['accuracy']}", body_style))
+        elements.append(Spacer(1, 10))
+        
+        elements.append(Paragraph("Top Influencing Factors:", styles['Heading3']))
+        feat_data = [["Feature", "Relative Importance (%)"]]
+        for f in latest_prediction['features']:
+            feat_data.append([f['name'], f"{f['importance']}%"])
+        
+        ft = Table(feat_data, colWidths=[200, 100])
+        ft.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#0ea5e9")),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey)
+        ]))
+        elements.append(ft)
+    else:
+        elements.append(Paragraph("No AI Model trained yet.", body_style))
+
+    # Build PDF
+    doc.build(elements)
+    buffer.seek(0)
+    
+    return send_file(
+        buffer,
+        as_attachment=True,
+        download_name="smart_data_report.pdf",
+        mimetype="application/pdf"
+    )
 
 if __name__ == "__main__":
     app.run(debug=True)
