@@ -299,7 +299,7 @@ def generate_insights(df, num_cols, cat_cols, corr_matrix):
 
     # Fallback
     if not insights:
-         insights.append({
+        insights.append({
             "icon": "fa-check-circle",
             "color": "text-green-400",
             "text": "Data looks balanced. No extreme relationships or outliers detected."
@@ -575,17 +575,19 @@ def ask_ai():
         if not model:
             return jsonify({"error": f"Could not find a valid Gemini model. Last error: {last_error}"}), 404
         
-        # Prepare context for Gemini
+        # Prepare context for Gemini - ENSURE IT IS JSON SAFE
+        safe_prediction = clean_nans(latest_prediction)
+        
         context = f"""
-        Dataset column to predict: {latest_prediction['target_name']}
-        Algorithm used: {latest_prediction['model_type']}
-        Model Confidence/Accuracy: {latest_prediction['accuracy']}
+        Dataset column to predict: {safe_prediction['target_name']}
+        Algorithm used: {safe_prediction['model_type']}
+        Model Confidence/Accuracy: {safe_prediction['accuracy']}
         
         Most Important Factors (Drivers):
-        {json.dumps(latest_prediction['features'], indent=2)}
+        {json.dumps(safe_prediction['features'], indent=2)}
         
         Recent Prediction Samples (Actual vs Predicted):
-        {json.dumps(latest_prediction['predictions'][:10], indent=2)}
+        {json.dumps(safe_prediction['predictions'][:10], indent=2)}
         """
         
         prompt = f"""
@@ -651,15 +653,16 @@ def download_report():
 
     # 3. AI Predictive Model Summary
     if latest_prediction:
+        safe_p = clean_nans(latest_prediction)
         elements.append(Paragraph("AI Prediction Analysis", heading_style))
-        elements.append(Paragraph(f"<b>Target Variable:</b> {latest_prediction['target_name']}", body_style))
-        elements.append(Paragraph(f"<b>Model Type:</b> {latest_prediction['model_type']}", body_style))
-        elements.append(Paragraph(f"<b>Performance:</b> {latest_prediction['accuracy']}", body_style))
+        elements.append(Paragraph(f"<b>Target Variable:</b> {safe_p['target_name']}", body_style))
+        elements.append(Paragraph(f"<b>Model Type:</b> {safe_p['model_type']}", body_style))
+        elements.append(Paragraph(f"<b>Performance:</b> {safe_p['accuracy']}", body_style))
         elements.append(Spacer(1, 10))
         
         elements.append(Paragraph("Top Influencing Factors:", styles['Heading3']))
         feat_data = [["Feature", "Relative Importance (%)"]]
-        for f in latest_prediction['features']:
+        for f in safe_p['features']:
             feat_data.append([f['name'], f"{f['importance']}%"])
         
         ft = Table(feat_data, colWidths=[200, 100])
