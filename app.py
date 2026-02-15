@@ -31,13 +31,13 @@ import seaborn as sns
 app = Flask(__name__, static_folder='frontend', template_folder='frontend', static_url_path='')
 CORS(app)
 
-# --- Configuration ---
-UPLOAD_FOLDER = "uploads"
-PROCESSED_FOLDER = "processed"
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-os.makedirs(PROCESSED_FOLDER, exist_ok=True)
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 app.config["PROCESSED_FOLDER"] = PROCESSED_FOLDER
+
+# Detect if we are on a constrained cloud environment (Render/Vercel)
+IS_CLOUD = os.environ.get("RENDER") or os.environ.get("VERCEL")
+if IS_CLOUD:
+    print("☁️ Cloud Environment Detected: Enabling Turbo Analysis (Eco-Mode)")
 
 # Configure Gemini
 api_key = os.getenv("GOOGLE_API_KEY")
@@ -228,9 +228,11 @@ def analyze_data(original_df, cleaned_df):
 
     # 3. Correlation Heatmap (CRITICAL: Limit to top 15 numeric cols)
     # Correlation is O(N^2) - 500+ cols will fail 504 timeout on free tier
-    if len(num_cols) > 1:
+    if len(num_cols) > 1 and not (IS_CLOUD and len(cleaned_df) > 2000):
         try:
-            target_cols = num_cols[:15] # Limit heatmap size for speed
+            # On cloud, only correlate first 8 columns to save CPU
+            limit = 8 if IS_CLOUD else 15
+            target_cols = num_cols[:limit] 
             corr = cleaned_df[target_cols].corr().round(2).fillna(0)
             analysis["heatmap"] = {
                 "columns": [str(c) for c in corr.columns],
@@ -395,11 +397,14 @@ def upload():
             # Try multiple encodings
             for enc in ['utf-8', 'latin1', 'iso-8859-1', 'cp1252']:
                 try:
-                    if file_size_mb > 10:
-                        print(f"📦 Large file. Reading first 30k rows with {enc}...")
-                        original_df = pd.read_csv(filepath, nrows=30000, encoding=enc, low_memory=False)
+                    # 🚀 TURBO MODE: On cloud, we must be much stricter with file size
+                    row_limit = 5000 if IS_CLOUD else 30000
+                    size_trigger = 2 if IS_CLOUD else 10 # Trigger limit at 2MB on cloud
+                    
+                    if file_size_mb > size_trigger:
+                        print(f"📦 Large file on {'Cloud' if IS_CLOUD else 'Local'}. Reading {row_limit} rows...")
+                        original_df = pd.read_csv(filepath, nrows=row_limit, encoding=enc, low_memory=False)
                     else:
-                        print(f"📦 Reading full file with {enc}...")
                         original_df = pd.read_csv(filepath, encoding=enc, low_memory=False)
                     print("✅ Successfully read CSV")
                     break
