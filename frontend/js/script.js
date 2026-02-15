@@ -161,8 +161,9 @@ function renderDashboard(data) {
         targetSelect.appendChild(opt);
     });
 
-    // 5. Download Link
+    // 5. Download Links
     document.getElementById('downloadLink').href = `${API_BASE_URL}/download`;
+    document.getElementById('downloadReportLink').href = `${API_BASE_URL}/download-report`;
 
     // 6. Visuals
     renderHeatmap(data.heatmap);
