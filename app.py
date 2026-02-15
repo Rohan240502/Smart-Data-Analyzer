@@ -28,7 +28,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder='frontend', template_folder='frontend', static_url_path='')
 CORS(app)
 
 # --- Configuration ---
@@ -54,6 +54,57 @@ else:
 df = None
 # Global variable to store latest prediction for the report
 latest_prediction = None
+# Cache for working Gemini model name to avoid re-testing
+working_model_name = None
+
+def get_working_model():
+    global working_model_name
+    
+    if not api_key or not GEMINI_AVAILABLE:
+        return None, "Gemini API key or library missing"
+
+    # Use cache if we already found a working model
+    if working_model_name:
+        try:
+            return genai.GenerativeModel(working_model_name), ""
+        except:
+            working_model_name = None # Clear cache if it fails
+
+    # List of models to try
+    model_names = [
+        'models/gemini-2.0-flash', 
+        'models/gemini-2.0-flash-lite',
+        'models/gemini-flash-latest', 
+        'models/gemini-pro-latest',
+        'models/gemini-1.5-flash', 
+        'models/gemini-1.5-pro'
+    ]
+    
+    last_error = ""
+    print(f"🤖 AI: Searching for available model...")
+    
+    # Discovery step
+    try:
+        listed_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        # Merge listed models with our preferred list, prioritizing listed ones
+        model_names = listed_models + [m for m in model_names if m not in listed_models]
+    except Exception as e:
+        print(f"  ⚠️ Could not list models automatically: {e}")
+
+    for name in model_names:
+        try:
+            temp_model = genai.GenerativeModel(name)
+            # Fast ping test
+            response = temp_model.generate_content("ping", generation_config={"max_output_tokens": 1})
+            if response:
+                working_model_name = name # Save to cache
+                print(f"  ✅ {name} selected and cached.")
+                return temp_model, ""
+        except Exception as e:
+            last_error = str(e)
+            continue
+            
+    return None, last_error
 
 
 # -----------------------------
@@ -315,7 +366,7 @@ def generate_insights(df, num_cols, cat_cols, corr_matrix):
 # -----------------------------
 @app.route("/")
 def home():
-    return jsonify({"status": "Smart Data Analyzer API is running!", "version": "2.0"})
+    return render_template("index.html")
 
 
 @app.route("/upload", methods=["POST"])
@@ -379,6 +430,15 @@ def upload():
         print("🔏 Preparing JSON response...")
         safe_analysis = clean_nans(analysis)
         print("🚀 JSON prepared successfully. Sending response.")
+        # Logic: If the request is from a browser form (HTML), render the template. 
+        # If it's from Javascript (fetch), return JSON.
+        accept_header = request.headers.get("Accept", "")
+        if "text/html" in accept_header and "application/json" not in accept_header:
+            # Standard form submission (non-JS)
+            tables = cleaned_dashboard_df.head(15).to_html(classes='styled-table', index=False)
+            return render_template("index.html", analysis=safe_analysis, tables=tables, download_link="/download")
+        
+        # Default to JSON for fetch/AJAX
         return jsonify(safe_analysis)
 
     except Exception as e:
@@ -551,43 +611,20 @@ def predict():
 
 @app.route("/ask-ai", methods=["POST"])
 def ask_ai():
-    if not api_key or not GEMINI_AVAILABLE:
-        return jsonify({"error": "Google Gemini API Key is missing. Please add GOOGLE_API_KEY to environment variables."}), 400
-        
     global latest_prediction
     if not latest_prediction:
         return jsonify({"error": "No prediction results to analyze. Please train a model first."}), 400
 
-    try:
-        # Try different model names to handle potential regional 404s
-        model_names = ['gemini-1.5-flash', 'gemini-1.5-flash-latest', 'gemini-1.5-pro', 'gemini-1.0-pro', 'gemini-pro']
-        model = None
-        last_error = ""
+    model, error_msg = get_working_model()
+    
+    if not model:
+        return jsonify({
+            "error": "Gemini AI Connection Failed",
+            "details": error_msg,
+            "tip": "Check if your API key has 'Generative Language API' enabled in Google Cloud Console."
+        }), 404
 
-        print(f"🤖 AI Insight: Attempting to find a working model...")
-        for name in model_names:
-            try:
-                print(f"  - Testing {name}...")
-                temp_model = genai.GenerativeModel(name)
-                # Test the model with a tiny query
-                response = temp_model.generate_content("ping", generation_config={"max_output_tokens": 1})
-                if response:
-                    model = temp_model
-                    print(f"  ✅ {name} is working!")
-                    break
-            except Exception as e:
-                last_error = str(e)
-                print(f"  ❌ {name} failed: {last_error}")
-                continue
-        
-        if not model:
-            print(f"❌ AI Insight: All models failed. Last error: {last_error}")
-            return jsonify({
-                "error": "Gemini AI Connection Failed",
-                "details": last_error,
-                "tip": "Check if your API key has 'Generative Language API' enabled in Google Cloud Console."
-            }), 404
-        
+    try:
         # Prepare context for Gemini - ENSURE IT IS JSON SAFE
         safe_prediction = clean_nans(latest_prediction)
         
@@ -700,9 +737,6 @@ def download_report():
 
 @app.route("/chat-data", methods=["POST"])
 def chat_data():
-    if not api_key or not GEMINI_AVAILABLE:
-        return jsonify({"error": "Gemini API not configured"}), 400
-    
     global df
     if df is None:
         return jsonify({"error": "No dataset uploaded"}), 400
@@ -711,34 +745,12 @@ def chat_data():
     if not user_query:
         return jsonify({"error": "No query provided"}), 400
 
-    try:
-        # Try different model names to handle potential regional 404s
-        model_names = ['gemini-1.5-flash', 'gemini-1.5-flash-latest', 'gemini-1.5-pro', 'gemini-1.0-pro', 'gemini-pro']
-        model = None
-        last_error = ""
+    model, error_msg = get_working_model()
+    
+    if not model:
+        return jsonify({"error": f"Gemini Cloud Error: {error_msg}"}), 404
 
-        print(f"💬 Chat AI: Searching for available model...")
-        for name in model_names:
-            try:
-                temp_model = genai.GenerativeModel(name)
-                try:
-                    # Test if the model exists and is responsive
-                    response = temp_model.generate_content("ping", generation_config={"max_output_tokens": 1})
-                    if response:
-                        model = temp_model
-                        print(f"  ✅ {name} is working!")
-                        break
-                except Exception as inner_e:
-                    last_error = str(inner_e)
-                    continue
-            except Exception as e:
-                last_error = str(e)
-                continue
-        
-        if not model:
-            print(f"❌ Chat AI: All models failed. Last error: {last_error}")
-            return jsonify({"error": f"Gemini Cloud Error: {last_error}"}), 404
-        
+    try:
         # Prepare context
         summary = df.describe(include='all').to_string()
         cols = list(df.columns)
