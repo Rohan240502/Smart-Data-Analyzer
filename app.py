@@ -1,11 +1,10 @@
-from flask import Flask, render_template, request, send_file, jsonify
+from flask import Flask, request, jsonify, send_file, render_template
+from flask_cors import CORS
 import os
 import io
 import json
 import pandas as pd
 import numpy as np
-from flask import Flask, request, jsonify, send_file
-from flask_cors import CORS
 from dotenv import load_dotenv
 
 # Try to import Google Generative AI
@@ -741,4 +740,7 @@ def chat_data():
         return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    # Get port from environment variable (default to 5000 for local dev)
+    port = int(os.environ.get("PORT", 5000))
+    # Bind to 0.0.0.0 so Render's load balancer can reach the app
+    app.run(host='0.0.0.0', port=port)
