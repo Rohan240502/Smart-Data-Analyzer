@@ -31,13 +31,22 @@ import seaborn as sns
 app = Flask(__name__, static_folder='frontend', template_folder='frontend', static_url_path='')
 CORS(app)
 
-app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
-app.config["PROCESSED_FOLDER"] = PROCESSED_FOLDER
-
+# --- Configuration ---
 # Detect if we are on a constrained cloud environment (Render/Vercel)
 IS_CLOUD = os.environ.get("RENDER") or os.environ.get("VERCEL")
+
 if IS_CLOUD:
     print("☁️ Cloud Environment Detected: Enabling Turbo Analysis (Eco-Mode)")
+    UPLOAD_FOLDER = "/tmp/uploads"
+    PROCESSED_FOLDER = "/tmp/processed"
+else:
+    UPLOAD_FOLDER = "uploads"
+    PROCESSED_FOLDER = "processed"
+
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(PROCESSED_FOLDER, exist_ok=True)
+app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
+app.config["PROCESSED_FOLDER"] = PROCESSED_FOLDER
 
 # Configure Gemini
 api_key = os.getenv("GOOGLE_API_KEY")
