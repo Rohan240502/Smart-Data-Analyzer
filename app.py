@@ -557,8 +557,23 @@ def ask_ai():
         return jsonify({"error": "No prediction results to analyze. Please train a model first."}), 400
 
     try:
-        # Use 'gemini-1.5-flash' for maximum compatibility across all API versions
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        # Try different model names to handle potential regional 404s
+        model_names = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro']
+        model = None
+        last_error = ""
+
+        for name in model_names:
+            try:
+                model = genai.GenerativeModel(name)
+                # Test the model with a tiny query if possible, or just proceed
+                # Instead of testing (slow), we'll try to catch the error in generation
+                break
+            except Exception as e:
+                last_error = str(e)
+                continue
+        
+        if not model:
+            return jsonify({"error": f"Could not find a valid Gemini model. Last error: {last_error}"}), 404
         
         # Prepare context for Gemini
         context = f"""
@@ -681,7 +696,21 @@ def chat_data():
         return jsonify({"error": "No query provided"}), 400
 
     try:
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        # Try different model names to handle potential regional 404s
+        model_names = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro']
+        model = None
+        last_error = ""
+
+        for name in model_names:
+            try:
+                model = genai.GenerativeModel(name)
+                break
+            except Exception as e:
+                last_error = str(e)
+                continue
+        
+        if not model:
+            return jsonify({"error": f"Could not find a valid Gemini model. {last_error}"}), 404
         
         # Prepare context
         summary = df.describe(include='all').to_string()
