@@ -379,6 +379,10 @@ def generate_insights(df, num_cols, cat_cols, corr_matrix):
 def home():
     return render_template("index.html")
 
+@app.route("/google9330ee0497287ddc.html")
+def google_verification():
+    return "google-site-verification: google9330ee0497287ddc.html"
+
 
 @app.route("/upload", methods=["POST"])
 def upload():
