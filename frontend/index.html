@@ -1,0 +1,341 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Smart Data Analyzer</title>
+
+    <!-- Fonts -->
+    <link
+      href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <!-- Icons -->
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+    />
+    <!-- CSS -->
+    <link rel="stylesheet" href="css/style.css" />
+    <link rel="stylesheet" href="css/heatmap.css" />
+    <link rel="stylesheet" href="css/insights.css" />
+    <link rel="stylesheet" href="css/prediction.css" />
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  </head>
+  <body>
+    <div class="background-globes">
+      <div class="globe globe-1"></div>
+      <div class="globe globe-2"></div>
+      <div class="globe globe-3"></div>
+    </div>
+
+    <div class="container fade-in">
+      <header class="header">
+        <div
+          style="
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            width: 100%;
+          "
+        >
+          <div class="logo">
+            <i class="fa-solid fa-chart-line"></i>
+            <div style="display: flex; flex-direction: column">
+              <h1>Smart Data Analyzer</h1>
+              <span class="subtitle" style="font-size: 0.9rem; opacity: 0.7"
+                >Turbo Analysis Mode Active</span
+              >
+            </div>
+          </div>
+          <button
+            id="newUploadBtn"
+            class="download-btn-chart"
+            style="width: auto; padding: 0 20px; gap: 8px; display: none"
+          >
+            <i class="fa-solid fa-rotate-left"></i> New Analysis
+          </button>
+        </div>
+        <p class="subtitle" id="headerSubtitle">
+          Transform your raw CSV data into actionable insights instantly.
+        </p>
+      </header>
+
+      <!-- DASHBOARD (Visible after Upload) -->
+      <div id="dashboard" style="display: none">
+        <!-- AI PREDICTOR (Screen 3, 11-14) -->
+        <div class="card predict-card slide-up delay-1" id="predictCard">
+          <div class="card-header">
+            <i class="fa-solid fa-robot"></i>
+            <h2>AI Auto-Predictor</h2>
+          </div>
+          <div class="predict-controls">
+            <select id="targetSelect" class="predict-select"></select>
+            <button id="trainBtn" class="predict-btn">
+              <i class="fa-solid fa-rocket"></i> Train Model
+            </button>
+            <div id="predictLoader" style="display: none; padding-left: 20px">
+              <i class="fa-solid fa-spinner fa-spin"></i>
+            </div>
+          </div>
+
+          <div
+            id="predictResults"
+            class="predict-results"
+            style="display: none"
+          >
+            <div style="text-align: center; margin-bottom: 25px">
+              <span id="modelAccuracy" class="accuracy-badge"></span>
+            </div>
+            <div class="grid-container">
+              <div class="chart-container" style="height: 350px">
+                <canvas id="predictionChart"></canvas>
+              </div>
+              <div class="feature-importance">
+                <h3 style="margin-bottom: 20px; color: var(--text-secondary)">
+                  Top Drivers
+                </h3>
+                <div id="featureList" class="feature-list"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- SMART AI INSIGHTS CARD -->
+        <div
+          class="card slide-up delay-2"
+          id="aiInsightCard"
+          style="
+            display: none;
+            border: 1px solid var(--accent-purple);
+            background: rgba(168, 85, 247, 0.05);
+          "
+        >
+          <div class="card-header" style="justify-content: space-between">
+            <div style="display: flex; align-items: center; gap: 10px">
+              <i
+                class="fa-solid fa-brain"
+                style="color: var(--accent-purple)"
+              ></i>
+              <h2>Smart AI Executive Insight</h2>
+            </div>
+            <button
+              id="askAiBtn"
+              class="predict-btn"
+              style="
+                width: auto;
+                padding: 5px 15px;
+                font-size: 0.8rem;
+                background: var(--accent-purple);
+              "
+            >
+              <i class="fa-solid fa-wand-magic-sparkles"></i> Analyze Results
+            </button>
+          </div>
+          <div
+            id="aiInsightContent"
+            style="
+              padding: 15px;
+              line-height: 1.6;
+              color: var(--text-secondary);
+            "
+          >
+            Training model... once finished, click "Analyze Results" for a deep
+            dive into these patterns.
+          </div>
+        </div>
+
+        <!-- CLEANED DATA PREVIEW (Screen 4) -->
+        <div class="card preview-card slide-up delay-2">
+          <div class="preview-header">
+            <div class="card-header" style="margin-bottom: 0">
+              <i class="fa-solid fa-table"></i>
+              <h2>Cleaned Data Preview</h2>
+            </div>
+          </div>
+          <div class="table-wrapper">
+            <table class="styled-table" id="previewTable">
+              <thead>
+                <tr id="previewHead"></tr>
+              </thead>
+              <tbody id="previewBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- SUMMARY STATS (Screen 6) -->
+        <div class="grid-container slide-up delay-3">
+          <div class="card">
+            <div class="card-header">
+              <i class="fa-solid fa-wand-magic-sparkles"></i>
+              <h2>Cleaning Summary</h2>
+            </div>
+            <table class="styled-table" id="summaryTable">
+              <thead>
+                <tr>
+                  <th>Metric</th>
+                  <th>Before</th>
+                  <th>After</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <i class="fa-solid fa-magnifying-glass"></i>
+              <h2>Missing Values</h2>
+            </div>
+            <div class="table-wrapper" style="max-height: 250px">
+              <table class="styled-table" id="missingTable">
+                <thead>
+                  <tr>
+                    <th>Column</th>
+                    <th>Missing Count</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- SMART AI INSIGHTS (Screen 7) -->
+        <div class="card slide-up delay-4" id="insightsCard">
+          <div class="card-header">
+            <i class="fa-solid fa-brain"></i>
+            <h2>Smart AI Insights</h2>
+          </div>
+          <div id="insightsGrid" class="insights-grid"></div>
+        </div>
+
+        <!-- VISUALIZATIONS (Screen 8-10) -->
+        <div class="grid-container slide-up" id="chartsContainer"></div>
+
+        <!-- CORRELATION HEATMAP (Screen 8) -->
+        <div class="card slide-up" id="heatmapCard">
+          <div class="card-header">
+            <i class="fa-solid fa-fire-flame-curved"></i>
+            <h2>Correlation Heatmap</h2>
+          </div>
+          <div class="table-wrapper">
+            <table class="heatmap-table" id="heatmapTable"></table>
+          </div>
+        </div>
+
+        <!-- DATA CHAT INTERFACE -->
+        <div class="card slide-up delay-4" id="chatCard">
+          <div class="card-header">
+            <i class="fa-solid fa-comments"></i>
+            <h2>Chat with your Data</h2>
+          </div>
+          <div
+            id="chatWindow"
+            style="
+              height: 300px;
+              overflow-y: auto;
+              padding: 15px;
+              border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+              background: rgba(0, 0, 0, 0.1);
+            "
+          >
+            <div class="chat-message bot">
+              Hello! I've analyzed your data. Ask me anything about trends,
+              outliers, or specific columns.
+            </div>
+          </div>
+          <div style="padding: 15px; display: flex; gap: 10px">
+            <input
+              type="text"
+              id="chatInput"
+              placeholder="Ask a question about your data..."
+              style="
+                flex: 1;
+                padding: 10px;
+                border-radius: 8px;
+                background: rgba(255, 255, 255, 0.05);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                color: white;
+              "
+            />
+            <button
+              id="sendChatBtn"
+              class="predict-btn"
+              style="width: auto; padding: 0 20px"
+            >
+              <i class="fa-solid fa-paper-plane"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- DOWNLOAD (Screen 5) -->
+        <div
+          style="
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin: 40px 0;
+          "
+        >
+          <a id="downloadLink" href="#" class="btn-download">
+            <i class="fa-solid fa-file-csv"></i> Download CSV
+          </a>
+          <a
+            id="downloadReportLink"
+            href="#"
+            class="btn-download"
+            style="
+              background: linear-gradient(135deg, var(--accent-blue), #3b82f6);
+            "
+          >
+            <i class="fa-solid fa-file-pdf"></i> Download AI Report
+          </a>
+        </div>
+      </div>
+
+      <!-- INITIAL UPLOAD (Screen 1 & 2) -->
+      <div class="card upload-card bounce-in" id="uploadSection">
+        <div class="card-header">
+          <i class="fa-solid fa-folder-open"></i>
+          <h2>Upload Dataset</h2>
+        </div>
+        <form id="uploadForm">
+          <div class="file-input-wrapper" id="dropZone">
+            <input
+              type="file"
+              name="file"
+              id="file"
+              class="file-input"
+              required
+              accept=".csv"
+            />
+            <div class="file-label">
+              <i class="fa-solid fa-file-csv" id="fileIcon"></i>
+              <span id="file-name-display">Choose a CSV file...</span>
+            </div>
+          </div>
+          <button type="submit" id="analyzeBtn" class="btn-primary">
+            Analyze Now <i class="fa-solid fa-bolt"></i>
+          </button>
+        </form>
+        <div
+          id="uploadLoader"
+          style="display: none; text-align: center; margin-top: 25px"
+        >
+          <i
+            class="fa-solid fa-circle-notch fa-spin fa-3x"
+            style="color: var(--accent-purple)"
+          ></i>
+          <p style="color: var(--text-secondary); margin-top: 10px">
+            Crunching your data...
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- MAIN LOGIC -->
+    <script src="js/script.js"></script>
+  </body>
+</html>

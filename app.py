@@ -1,7 +1,13 @@
-from flask import Flask, render_template, request, send_file, jsonify
-import pandas as pd
+from flask import Flask, request, jsonify, send_file, render_template
+from flask_cors import CORS
 import os
+import io
+import json
+import pandas as pd
+import numpy as np
+from dotenv import load_dotenv
 
+<<<<<<< HEAD
 from reportlab.lib.pagesizes import letter, A4
 from reportlab.pdfgen import canvas
 from reportlab.lib import colors
@@ -14,57 +20,176 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 app = Flask(__name__)
+=======
+# Try to import Google Generative AI
+try:
+    import google.generativeai as genai
+    GEMINI_AVAILABLE = True
+except ImportError:
+    GEMINI_AVAILABLE = False
+>>>>>>> a9149ab6b301b208be26da52d267d662a2a35b40
 
-UPLOAD_FOLDER = "uploads"
-PROCESSED_FOLDER = "processed"
+load_dotenv()
+
+from reportlab.lib.pagesizes import letter, A4
+from reportlab.pdfgen import canvas
+from reportlab.lib import colors
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image as ReportLabImage
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from io import BytesIO
+import matplotlib
+matplotlib.use('Agg') # Use non-interactive backend
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+
+app = Flask(__name__, static_folder='frontend', template_folder='frontend', static_url_path='')
+CORS(app)
+
+# --- Configuration ---
+# Detect if we are on a constrained cloud environment (Render/Vercel)
+IS_CLOUD = os.environ.get("RENDER") or os.environ.get("VERCEL")
+
+if IS_CLOUD:
+    print("☁️ Cloud Environment Detected: Enabling Turbo Analysis (Eco-Mode)")
+    UPLOAD_FOLDER = "/tmp/uploads"
+    PROCESSED_FOLDER = "/tmp/processed"
+else:
+    UPLOAD_FOLDER = "uploads"
+    PROCESSED_FOLDER = "processed"
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(PROCESSED_FOLDER, exist_ok=True)
-
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 app.config["PROCESSED_FOLDER"] = PROCESSED_FOLDER
 
-# Global variable to store uploaded dataframe
+# Configure Gemini
+api_key = os.getenv("GOOGLE_API_KEY")
+if api_key and GEMINI_AVAILABLE:
+    try:
+        genai.configure(api_key=api_key)
+        print("✨ Gemini AI: Configured successfully")
+    except Exception as e:
+        print(f"❌ Gemini AI: Configuration failed: {e}")
+else:
+    print("⚠️ Gemini AI: Key missing (GOOGLE_API_KEY) or library not installed.")
+
+# Global state to keep the last uploaded dataframe in memory
 df = None
 # Global variable to store latest prediction for the report
 latest_prediction = None
+<<<<<<< HEAD
+=======
+# Cache for working Gemini model name to avoid re-testing
+working_model_name = None
+
+def get_working_model():
+    global working_model_name
+    
+    if not api_key or not GEMINI_AVAILABLE:
+        return None, "Gemini API key or library missing"
+
+    # Use cache if we already found a working model
+    if working_model_name:
+        try:
+            return genai.GenerativeModel(working_model_name), ""
+        except:
+            working_model_name = None # Clear cache if it fails
+
+    # List of models to try
+    model_names = [
+        'models/gemini-2.0-flash', 
+        'models/gemini-2.0-flash-lite',
+        'models/gemini-flash-latest', 
+        'models/gemini-pro-latest',
+        'models/gemini-1.5-flash', 
+        'models/gemini-1.5-pro'
+    ]
+    
+    last_error = ""
+    print(f"🤖 AI: Searching for available model...")
+    
+    # Discovery step
+    try:
+        listed_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        # Merge listed models with our preferred list, prioritizing listed ones
+        model_names = listed_models + [m for m in model_names if m not in listed_models]
+    except Exception as e:
+        print(f"  ⚠️ Could not list models automatically: {e}")
+
+    for name in model_names:
+        try:
+            temp_model = genai.GenerativeModel(name)
+            # Fast ping test
+            response = temp_model.generate_content("ping", generation_config={"max_output_tokens": 1})
+            if response:
+                working_model_name = name # Save to cache
+                print(f"  ✅ {name} selected and cached.")
+                return temp_model, ""
+        except Exception as e:
+            last_error = str(e)
+            continue
+            
+    return None, last_error
+>>>>>>> a9149ab6b301b208be26da52d267d662a2a35b40
 
 
 # -----------------------------
-# Data Cleaning
+# Data Cleaning (Optimized for Speed)
 # -----------------------------
 def clean_data(df):
-    df = df.dropna(axis=1, how="all")
-    df = df.dropna(how="all")
-    df = df.drop_duplicates()
+    try:
+        # 1. Quick Drop
+        df = df.dropna(axis=1, how="all")
+        df = df.dropna(how="all")
+        df = df.drop_duplicates()
 
-    df.columns = (
-        df.columns.astype(str)
-        .str.lower()
-        .str.strip()
-        .str.replace(" ", "_")
-    )
+        # 2. Normalize Headlines
+        df.columns = [str(c).lower().strip().replace(" ", "_").replace("(", "").replace(")", "") for c in df.columns]
 
-    for col in df.columns:
-        df[col] = pd.to_numeric(df[col], errors="ignore")
+        # 3. Smart Type Conversion (Sequential pd.to_numeric is slow)
+        # Only attempt on columns that aren't already identified as numeric but might be
+        potential_numeric = df.select_dtypes(include=['object']).columns
+        for col in potential_numeric:
+            # Sample check: if first 5 non-null values aren't numeric-ish, skip
+            sample = df[col].dropna().head(5).astype(str)
+            if sample.str.match(r'^-?\d*\.?\d*$').all():
+                df[col] = pd.to_numeric(df[col], errors="coerce")
 
-    for col in df.columns:
-        if pd.api.types.is_numeric_dtype(df[col]):
-            df[col] = df[col].fillna(df[col].mean())
-        else:
-            if not df[col].mode().empty:
-                df[col] = df[col].fillna(df[col].mode()[0])
+        # 4. Vectorized Imputation
+        num_cols = df.select_dtypes(include=[np.number]).columns
+        if not num_cols.empty:
+            df[num_cols] = df[num_cols].fillna(df[num_cols].mean().fillna(0))
+        
+        cat_cols = df.select_dtypes(exclude=[np.number]).columns
+        for col in cat_cols:
+            if df[col].isnull().any():
+                mode_res = df[col].mode()
+                df[col] = df[col].fillna(mode_res[0] if not mode_res.empty else "Unknown")
+        
+        return df
+    except Exception as e:
+        print(f"Error in clean_data: {e}")
+        return df
 
-    return df
-
+# --- Utility: JSON Safety ---
+def clean_nans(obj):
+    if isinstance(obj, dict):
+        return {k: clean_nans(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [clean_nans(v) for v in obj]
+    elif isinstance(obj, (float, np.floating)):
+        if np.isnan(obj) or np.isinf(obj):
+            return None
+        return float(obj)
+    elif isinstance(obj, (int, np.integer)):
+        return int(obj)
+    elif pd.isna(obj): # Catch pandas specific NAs
+        return None
+    return obj 
 
 # -----------------------------
-# Data Analysis
-# -----------------------------
-import numpy as np
-
-# -----------------------------
-# Data Analysis
+# Data Analysis (Performance Focused)
 # -----------------------------
 def analyze_data(original_df, cleaned_df):
     analysis = {}
@@ -82,78 +207,79 @@ def analyze_data(original_df, cleaned_df):
     }
 
     analysis["missing_by_column"] = {
-        k: int(v) for k, v in cleaned_df.isnull().sum().to_dict().items()
+        k: int(v) for k, v in cleaned_df.isnull().sum().head(20).to_dict().items()
     }
 
-    # Generate Chart Data
-    analysis["charts"] = []
-    
-    # Identify columns
+    # Column separation
     cat_cols = cleaned_df.select_dtypes(include="object").columns.tolist()
     num_cols = cleaned_df.select_dtypes(include="number").columns.tolist()
+
+    # Generate Chart Data (Limit to avoid payload/processing bloat)
+    analysis["charts"] = []
     
     # 1. Categorical Analysis
-    if cat_cols:
-        col = cat_cols[0]
-        # Bar Chart Data
-        vc = cleaned_df[col].astype(str).value_counts().head(10)
-        analysis["charts"].append({
-            "type": "bar",
-            "id": "barChart",
-            "title": f"Top Categories in {col}",
-            "labels": vc.index.tolist(),
-            "data": vc.tolist(),
-            "color": "gradient",
-            "grid": "full"
-        })
-        
-        # Pie Chart Data (Top 5)
-        vc_pie = cleaned_df[col].astype(str).value_counts().head(5)
-        analysis["charts"].append({
-            "type": "doughnut",
-            "id": "pieChart",
-            "title": f"Composition of {col}",
-            "labels": vc_pie.index.tolist(),
-            "data": vc_pie.tolist(),
-            "color": "multi",
-            "grid": "half"
-        })
+    for i, col in enumerate(cat_cols[:3]): 
+        try:
+            counts = cleaned_df[col].value_counts().head(8)
+            chart_type = "doughnut" if i == 1 else "bar"
+            
+            analysis["charts"].append({
+                "type": chart_type,
+                "id": f"catChart_{i}",
+                "title": f"{col.replace('_', ' ').title()} Split",
+                "labels": [str(x) for x in counts.index.tolist()],
+                "data": [float(x) for x in counts.values.tolist()],
+                "color": "multi" if chart_type == "doughnut" else "gradient",
+                "grid": "half"
+            })
+        except: continue
 
     # 2. Numerical Analysis
-    if num_cols:
-        col = num_cols[0]
-        # Histogram Data
-        hist, bin_edges = np.histogram(cleaned_df[col].dropna(), bins=10)
-        labels = [f"{int(bin_edges[i])}-{int(bin_edges[i+1])}" for i in range(len(hist))]
-        
-        analysis["charts"].append({
-            "type": "line",
-            "id": "lineChart",
-            "title": f"Distribution of {col}",
-            "labels": labels,
-            "data": hist.tolist(),
-            "color": "solid",
-            "grid": "half"
-        })
+    for i, col in enumerate(num_cols[:2]):
+        try:
+            data_to_plot = cleaned_df[col].dropna()
+            if not data_to_plot.empty:
+                hist, bin_edges = np.histogram(data_to_plot, bins=8)
+                labels = [f"{float(bin_edges[j]):.1f}" for j in range(len(hist))]
+                
+                analysis["charts"].append({
+                    "type": "line",
+                    "id": f"numChart_{i}",
+                    "title": f"{col.replace('_', ' ').title()} Trend",
+                    "labels": labels,
+                    "data": [float(x) for x in hist.tolist()],
+                    "color": "solid",
+                    "grid": "half"
+                })
+        except: continue
 
-    # 3. Correlation Heatmap
-    if len(num_cols) > 1:
-        corr = cleaned_df[num_cols].corr().round(2)
-        print("DEBUG: Correlation matrix generated") # Debug print
-        analysis["heatmap"] = {
-            "columns": corr.columns.tolist(),
-            "data": corr.values.tolist() # Renamed from 'values' to 'data'
-        }
+    # 3. Correlation Heatmap (CRITICAL: Limit to top 15 numeric cols)
+    # Correlation is O(N^2) - 500+ cols will fail 504 timeout on free tier
+    if len(num_cols) > 1 and not (IS_CLOUD and len(cleaned_df) > 2000):
+        try:
+            # On cloud, only correlate first 8 columns to save CPU
+            limit = 8 if IS_CLOUD else 15
+            target_cols = num_cols[:limit] 
+            corr = cleaned_df[target_cols].corr().round(2).fillna(0)
+            analysis["heatmap"] = {
+                "columns": [str(c) for c in corr.columns],
+                "data": corr.values.tolist()
+            }
+        except:
+            analysis["heatmap"] = None
     else:
         analysis["heatmap"] = None
-        corr = None
 
     # 4. Smart Insights
-    analysis["insights"] = generate_insights(cleaned_df, num_cols, cat_cols, corr)
+    try:
+        # Use limited numeric cols for insights speed if too many
+        sub_num = num_cols[:10]
+        analysis["insights"] = generate_insights(cleaned_df, sub_num, cat_cols[:10], 
+                                               cleaned_df[sub_num].corr() if len(sub_num) > 1 else None)
+    except:
+        analysis["insights"] = []
     
-    # 5. Metadata for Prediction
-    analysis["columns"] = cleaned_df.columns.tolist()
-
+    analysis["columns"] = [str(c) for c in cleaned_df.columns.tolist()]
     return analysis
 
 # -----------------------------
@@ -255,7 +381,7 @@ def generate_insights(df, num_cols, cat_cols, corr_matrix):
 
     # Fallback
     if not insights:
-         insights.append({
+        insights.append({
             "icon": "fa-check-circle",
             "color": "text-green-400",
             "text": "Data looks balanced. No extreme relationships or outliers detected."
@@ -271,47 +397,96 @@ def generate_insights(df, num_cols, cat_cols, corr_matrix):
 def home():
     return render_template("index.html")
 
+@app.route("/google9330ee0497287ddc.html")
+def google_verification():
+    return "google-site-verification: google9330ee0497287ddc.html"
+
 
 @app.route("/upload", methods=["POST"])
 def upload():
     global df  # Declare df as global
     
-    if "file" not in request.files:
-        return "No file uploaded"
+    try:
+        if "file" not in request.files:
+            return "No file uploaded", 400
 
-    file = request.files["file"]
-    if file.filename == "":
-        return "No file selected"
+        file = request.files["file"]
+        if file.filename == "":
+            return "No file selected", 400
 
-    if not file.filename.lower().endswith(".csv"):
-        return "Only CSV files allowed"
+        if not file.filename.lower().endswith(".csv"):
+            return "Only CSV files allowed", 400
 
-    filepath = os.path.join(app.config["UPLOAD_FOLDER"], file.filename)
-    file.save(filepath)
+        filepath = os.path.join(app.config["UPLOAD_FOLDER"], file.filename)
+        file.save(filepath)
 
-    original_df = pd.read_csv(filepath)
-    cleaned_df = clean_data(original_df)
-    
-    # Store cleaned dataframe globally for prediction
-    df = cleaned_df
-    
-    analysis = analyze_data(original_df, cleaned_df)
+        # ⚡ MEMORY-SAFE LOADING
+        file_size_mb = os.path.getsize(filepath) / (1024 * 1024)
+        print(f"📂 Processing file: {file.filename} ({file_size_mb:.2f}MB)")
+        
+        try:
+            # Try multiple encodings
+            for enc in ['utf-8', 'latin1', 'iso-8859-1', 'cp1252']:
+                try:
+                    # 🚀 TURBO MODE: On cloud, we must be much stricter with file size
+                    row_limit = 5000 if IS_CLOUD else 30000
+                    size_trigger = 2 if IS_CLOUD else 10 # Trigger limit at 2MB on cloud
+                    
+                    if file_size_mb > size_trigger:
+                        print(f"📦 Large file on {'Cloud' if IS_CLOUD else 'Local'}. Reading {row_limit} rows...")
+                        original_df = pd.read_csv(filepath, nrows=row_limit, encoding=enc, low_memory=False)
+                    else:
+                        original_df = pd.read_csv(filepath, encoding=enc, low_memory=False)
+                    print("✅ Successfully read CSV")
+                    break
+                except UnicodeDecodeError:
+                    continue
+            else:
+                raise Exception("Could not decode CSV with any standard encoding.")
+        except Exception as e:
+            print(f"❌ Read failed: {e}")
+            return jsonify({"error": f"Failed to read CSV: {str(e)}"}), 400
+        
+        # Clean and Analyze
+        print("🧹 Cleaning data...")
+        cleaned_dashboard_df = clean_data(original_df)
+        df = cleaned_dashboard_df 
+        
+        # ⚡ SAVE CLEANED DATA: So the /download route can find it
+        processed_path = os.path.join(app.config["PROCESSED_FOLDER"], "cleaned_data.csv")
+        cleaned_dashboard_df.to_csv(processed_path, index=False)
+        print(f"💾 Cleaned data saved to: {processed_path}")
 
+        print("📊 Analyzing data...")
+        analysis = analyze_data(original_df, cleaned_dashboard_df)
+        
+        # ⚡ PREVIEW DATA: Add sample rows for the "Cleaned Data Preview" (Screen 4)
+        analysis["sample_data"] = cleaned_dashboard_df.head(15).to_dict(orient="records")
 
-    cleaned_path = os.path.join(app.config["PROCESSED_FOLDER"], "cleaned_data.csv")
-    cleaned_df.to_csv(cleaned_path, index=False)
+        print("🔏 Preparing JSON response...")
+        safe_analysis = clean_nans(analysis)
+        print("🚀 JSON prepared successfully. Sending response.")
+        # Logic: If the request is from a browser form (HTML), render the template. 
+        # If it's from Javascript (fetch), return JSON.
+        accept_header = request.headers.get("Accept", "")
+        if "text/html" in accept_header and "application/json" not in accept_header:
+            # Standard form submission (non-JS)
+            tables = cleaned_dashboard_df.head(15).to_html(classes='styled-table', index=False)
+            return render_template("index.html", analysis=safe_analysis, tables=tables, download_link="/download")
+        
+        # Default to JSON for fetch/AJAX
+        return jsonify(safe_analysis)
 
-    preview = cleaned_df.head(10).to_html(
-        classes="table",
-        index=False
-    )
-
-    return render_template(
-        "index.html",
-        tables=preview,
-        analysis=analysis,
-        download_link="/download"
-    )
+    except Exception as e:
+        import traceback
+        error_msg = traceback.format_exc()
+        # Log to server console
+        print(f"⛔ SERVER CRASH during upload/analyze:\n{error_msg}")
+        return jsonify({
+            "error": "The server failed to process this specific dataset.",
+            "details": str(e) if str(e) else "Internal processing error",
+            "tip": "This dataset might be too complex or contain incompatible characters. Try a simpler version."
+        }), 500
 
 
 @app.route("/download")
@@ -347,87 +522,109 @@ def predict():
         return jsonify({"error": "No dataset uploaded"}), 400
 
     target = request.form.get("target")
-    if target not in df.columns:
-        return jsonify({"error": "Invalid target column"}), 400
+    if not target or target not in df.columns:
+        return jsonify({"error": "Please select a valid column to predict."}), 400
 
-    # Prepare Data
-    data = df.copy()
-    
-    # 1. Handle Missing Values
-    data = data.dropna()
-    
-    if len(data) < 10:
-        return jsonify({"error": "Not enough data points after cleaning"}), 400
-
-    # 2. Encode Categorical Data
-    le = LabelEncoder()
-    cat_cols = data.select_dtypes(include="object").columns
-    for col in cat_cols:
-        data[col] = le.fit_transform(data[col].astype(str))
-
-    # 3. Split Features/Target
-    X = data.drop(columns=[target])
-    y = data[target]
-    
-    # 4. Train Model
     try:
-        # Detect if Regression (Number) or Classification (Text/category)
-        is_numeric = pd.api.types.is_numeric_dtype(df[target])
+        # 1. Start with a fresh copy and sanitize target
+        data = df.copy()
         
+        # ⚡ CRITICAL: Clean NaNs and Infs FROM THE TARGET
+        data[target] = pd.to_numeric(data[target], errors='coerce')
+        data = data.dropna(subset=[target])
+        data[target] = data[target].replace([np.inf, -np.inf], 0)
+        
+        if len(data) < 10:
+            return jsonify({"error": f"The column '{target}' has too many missing or invalid values to train a model. Try another column."}), 400
+
+        # 2. Convert Dates to Numbers (Universal)
+        for col in data.columns:
+            if data[col].dtype == "object":
+                try:
+                    # Quick date detection
+                    if data[col].astype(str).str.contains('-|/|:').any():
+                        temp_dates = pd.to_datetime(data[col], errors='coerce')
+                        if temp_dates.notnull().any():
+                             data[col] = temp_dates.apply(lambda x: x.timestamp() if pd.notnull(x) else 0)
+                except: continue
+
+        # 3. Handle Features (Encoding & Cleaning)
+        from sklearn.preprocessing import LabelEncoder
+        le = LabelEncoder()
+        
+        X_cols = [c for c in data.columns if c != target]
+        for col in X_cols:
+            if data[col].dtype == "object":
+                # Drop IDs or very long text
+                if data[col].nunique() > 100:
+                    data = data.drop(columns=[col])
+                    continue
+                data[col] = le.fit_transform(data[col].astype(str))
+            
+            # 🧹 DEEP CLEAN: No Infs, No NaNs in features
+            data[col] = pd.to_numeric(data[col], errors='coerce').fillna(0)
+            data[col] = data[col].replace([np.inf, -np.inf], 0)
+
+        # 4. Final Data Split Check
+        y = data[target]
+        X = data.drop(columns=[target])
+        
+        if X.empty or len(X.columns) == 0:
+            return jsonify({"error": "No useful data columns found to help with the prediction."}), 400
+
+        # Optimization for speed
+        if len(data) > 8000:
+            data = data.sample(8000, random_state=42)
+            X = data.drop(columns=[target])
+            y = data[target]
+
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
         
-        if is_numeric and df[target].nunique() > 10:
-            model = RandomForestRegressor(n_estimators=50, random_state=42)
-            model.fit(X_train, y_train)
-            score = r2_score(y_test, model.predict(X_test))
-            score_text = f"{score:.2%} (R² Score)"
+        if len(X_train) < 5:
+            return jsonify({"error": "Not enough data samples for a reliable prediction."}), 400
+
+        # 5. Train Model
+        is_numeric_target = pd.api.types.is_numeric_dtype(y)
+        unique_vals = y.nunique()
+
+        if is_numeric_target and unique_vals > 20:
+            model = RandomForestRegressor(n_estimators=30, max_depth=8, random_state=42)
             model_type = "Regression"
         else:
-            model = RandomForestClassifier(n_estimators=50, random_state=42)
-            model.fit(X_train, y_train)
-            score = accuracy_score(y_test, model.predict(X_test))
-            score_text = f"{score:.2%} (Accuracy)"
+            # Classification: Ensure y is discrete
+            y_train = y_train.astype(int) if is_numeric_target else le.fit_transform(y_train.astype(str))
+            y_test = y_test.astype(int) if is_numeric_target else le.fit_transform(y_test.astype(str))
+            model = RandomForestClassifier(n_estimators=30, max_depth=8, random_state=42)
             model_type = "Classification"
 
-        # 5. Feature Importance
-        importances = model.feature_importances_
-        indices = np.argsort(importances)[::-1][:5] # Top 5
+        model.fit(X_train, y_train)
         
-        features = []
-        for i in indices:
-            features.append({
-                "name": X.columns[i],
-                "importance": round(importances[i] * 100, 1)
-            })
-
-        # 6. Generate Predictions (first 20 test samples for visualization)
+        # 6. Scoring
         y_pred = model.predict(X_test)
-        predictions = []
-        sample_size = min(20, len(y_test))  # Show max 20 points
+        if model_type == "Regression":
+            score = r2_score(y_test, y_pred)
+            accuracy_text = f"{max(0, score):.1%} R² Confidence"
+        else:
+            score = accuracy_score(y_test, y_pred)
+            accuracy_text = f"{score:.1%} Accuracy"
+
+        # 7. Features & Predictions
+        importances = model.feature_importances_
+        top_idx = np.argsort(importances)[::-1][:5]
+        features = [{"name": X.columns[i], "importance": round(importances[i]*100, 1)} for i in top_idx]
+
+        # Convert y_test to a predictable format for indexing
+        y_test_list = y_test.tolist() if hasattr(y_test, 'tolist') else list(y_test)
         
-        for i in range(sample_size):
-            # Try to get a meaningful label (date from original data)
-            try:
-                idx = y_test.index[i]
-                # Try to find a date column in the original dataframe
-                if 'from_date' in df.columns:
-                    label = str(df.loc[idx, 'from_date'])
-                elif 'to_date' in df.columns:
-                    label = str(df.loc[idx, 'to_date'])
-                elif 'date' in df.columns:
-                    label = str(df.loc[idx, 'date'])
-                else:
-                    # If no date column, just show the index
-                    label = str(idx)
-            except:
-                label = f"Sample {i + 1}"
-            
+        predictions = []
+        for i in range(min(15, len(y_test_list))):
             predictions.append({
-                "actual": float(y_test.iloc[i]),
+                "actual": float(y_test_list[i]),
                 "predicted": float(y_pred[i]),
-                "label": label
+                "label": f"#{i+1}"
             })
 
+<<<<<<< HEAD
         # Store latest prediction globally for report
         global latest_prediction
         latest_prediction = {
@@ -438,15 +635,198 @@ def predict():
         }
 
         return jsonify({
+=======
+        global latest_prediction
+        latest_prediction = {
+>>>>>>> a9149ab6b301b208be26da52d267d662a2a35b40
             "model_type": model_type,
-            "accuracy": score_text,
+            "accuracy": accuracy_text,
             "features": features,
             "predictions": predictions,
             "target_name": target
-        })
+        }
+        
+        # ⚡ JSON Safety: Clean results before sending
+        return jsonify(clean_nans(latest_prediction))
 
     except Exception as e:
-        return jsonify({"error": f"Training failed: {str(e)}"}), 500
+        import traceback
+        print(f"⛔ PREDICT CRASH:\n{traceback.format_exc()}")
+        return jsonify({
+            "error": "Model training failed due to data inconsistencies.",
+            "details": str(e),
+            "tip": "This usually happens if a column has mixed text and numbers. Try a different column."
+        }), 500
+
+@app.route("/ask-ai", methods=["POST"])
+def ask_ai():
+    global latest_prediction
+    if not latest_prediction:
+        return jsonify({"error": "No prediction results to analyze. Please train a model first."}), 400
+
+    model, error_msg = get_working_model()
+    
+    if not model:
+        return jsonify({
+            "error": "Gemini AI Connection Failed",
+            "details": error_msg,
+            "tip": "Check if your API key has 'Generative Language API' enabled in Google Cloud Console."
+        }), 404
+
+    try:
+        # Prepare context for Gemini - ENSURE IT IS JSON SAFE
+        safe_prediction = clean_nans(latest_prediction)
+        
+        context = f"""
+        Dataset column to predict: {safe_prediction['target_name']}
+        Algorithm used: {safe_prediction['model_type']}
+        Model Confidence/Accuracy: {safe_prediction['accuracy']}
+        
+        Most Important Factors (Drivers):
+        {json.dumps(safe_prediction['features'], indent=2)}
+        
+        Recent Prediction Samples (Actual vs Predicted):
+        {json.dumps(safe_prediction['predictions'][:10], indent=2)}
+        """
+        
+        prompt = f"""
+        You are an expert Data Scientist. Analyze these AI results and provide 3 ultra-short professional "Executive Insights" (in bullet points).
+        Focus on:
+        1. Whether the model is reliable based on accuracy.
+        2. What the 'Top Drivers' mean for this specific business/data case.
+        3. One 'Smart Forecast' or action the user should take.
+        
+        Results Context:
+        {context}
+        
+        Response format: <b>Executive summary:</b><br/>• Point 1<br/>• Point 2<br/>• Point 3
+        Keep it very concise.
+        """
+        
+        response = model.generate_content(prompt)
+        return jsonify({"insight": response.text})
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/download-report")
+def download_report():
+    global df, latest_prediction
+    if df is None:
+        return "No data analyzed yet", 400
+
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4)
+    styles = getSampleStyleSheet()
+    
+    # Custom Styles
+    title_style = ParagraphStyle('Title', parent=styles['Heading1'], alignment=1, spaceAfter=20, textColor=colors.HexColor("#a855f7"))
+    heading_style = ParagraphStyle('Heading', parent=styles['Heading2'], spaceBefore=10, spaceAfter=10, textColor=colors.HexColor("#0ea5e9"))
+    body_style = styles['BodyText']
+
+    elements = []
+    
+    # 1. Title
+    elements.append(Paragraph("Smart Data Analyzer - Executive Report", title_style))
+    elements.append(Spacer(1, 12))
+    
+    # 2. Data Overview
+    elements.append(Paragraph("Data Overview", heading_style))
+    data_info = [
+        ["Metric", "Value"],
+        ["Total Rows", str(len(df))],
+        ["Total Columns", str(len(df.columns))],
+        ["Missing Values", str(df.isnull().sum().sum())]
+    ]
+    t = Table(data_info, colWidths=[150, 100])
+    t.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#a855f7")),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('GRID', (0, 0), (-1, -1), 1, colors.grey)
+    ]))
+    elements.append(t)
+    elements.append(Spacer(1, 20))
+
+    # 3. AI Predictive Model Summary
+    if latest_prediction:
+        safe_p = clean_nans(latest_prediction)
+        elements.append(Paragraph("AI Prediction Analysis", heading_style))
+        elements.append(Paragraph(f"<b>Target Variable:</b> {safe_p['target_name']}", body_style))
+        elements.append(Paragraph(f"<b>Model Type:</b> {safe_p['model_type']}", body_style))
+        elements.append(Paragraph(f"<b>Performance:</b> {safe_p['accuracy']}", body_style))
+        elements.append(Spacer(1, 10))
+        
+        elements.append(Paragraph("Top Influencing Factors:", styles['Heading3']))
+        feat_data = [["Feature", "Relative Importance (%)"]]
+        for f in safe_p['features']:
+            feat_data.append([f['name'], f"{f['importance']}%"])
+        
+        ft = Table(feat_data, colWidths=[200, 100])
+        ft.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#0ea5e9")),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey)
+        ]))
+        elements.append(ft)
+    else:
+        elements.append(Paragraph("No AI Model trained yet.", body_style))
+
+    doc.build(elements)
+    buffer.seek(0)
+    
+    return send_file(
+        buffer,
+        as_attachment=True,
+        download_name="smart_data_report.pdf",
+        mimetype="application/pdf"
+    )
+
+@app.route("/chat-data", methods=["POST"])
+def chat_data():
+    global df
+    if df is None:
+        return jsonify({"error": "No dataset uploaded"}), 400
+
+    user_query = request.json.get("query")
+    if not user_query:
+        return jsonify({"error": "No query provided"}), 400
+
+    model, error_msg = get_working_model()
+    
+    if not model:
+        return jsonify({"error": f"Gemini Cloud Error: {error_msg}"}), 404
+
+    try:
+        # Prepare context
+        summary = df.describe(include='all').to_string()
+        cols = list(df.columns)
+        sample = df.head(5).to_string()
+        
+        context = f"""
+        You are a Data Expert. Answer questions about the user's dataset.
+        Columns: {cols}
+        
+        Statistical Summary:
+        {summary}
+        
+        Sample Data:
+        {sample}
+        
+        The user asks: {user_query}
+        Keep your response helpful, professional and concise. Use bullet points if listing facts.
+        """
+        
+        response = model.generate_content(context)
+        return jsonify({"response": response.text})
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    # Get port from environment variable (default to 5000 for local dev)
+    port = int(os.environ.get("PORT", 5000))
+    # Bind to 0.0.0.0 so Render's load balancer can reach the app
+    app.run(host='0.0.0.0', port=port)

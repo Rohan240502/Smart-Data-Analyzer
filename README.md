@@ -1,37 +1,36 @@
-# Smart Data Analyzer 🚀
+# 🚀 Smart Data Analyzer v2.0
 
-Smart Data Analyzer is a Flask-based web application that allows users to upload
-CSV files and automatically perform data cleaning, preprocessing, and summary
-analysis.
+Transform raw CSV data into actionable insights instantly with AI-powered analytics.
 
-The application is designed to help companies and analysts quickly prepare
-raw datasets for analysis without writing code.
+## 🏗️ Architecture (Separated Frontend/Backend)
 
----
-
-## 🔹 Features
-
-- Upload CSV files
-- Automatic data cleaning
-  - Remove duplicate rows
-  - Handle missing values (mean for numeric, mode for categorical)
-  - Standardize column names
-- Before vs After data cleaning summary
-- Missing values report
-- Preview cleaned data
-- Download cleaned CSV file
+- **Frontend**: Static HTML/JS/CSS hosted on **Netlify**.
+- **Backend**: Flask API with Machine Learning hosted on **Render**.
 
 ---
 
-## 🔹 Tech Stack
+## 🌍 Deployment Guide
 
-- Python
-- Flask
-- Pandas
-- HTML / CSS
-- Chart.js (planned)
+### **1. Backend (Render)**
+
+- Connect your GitHub repo to **Render.com**.
+- Create a new **Web Service**.
+- Select the repository.
+- **Build Command**: `pip install -r requirements.txt`
+- **Start Command**: `gunicorn app:app`
+- Copy your Render URL (e.g., `https://your-app.onrender.com`).
+
+### **2. Frontend (Netlify)**
+
+- Open `frontend/js/script.js`.
+- Update the `API_BASE_URL` on line 4 with your Render URL.
+- Deploy the **`frontend`** folder only to **Netlify**.
 
 ---
 
-## 🔹 Project Structure
+## ✨ Features
 
+- **AI Auto-Predictor**: Random Forest model with actual vs. predicted visualization.
+- **Smart Insights**: Automated outlier detection and trend analysis.
+- **Correlation Heatmap**: Visual link between variables.
+- **Data Cleaner**: Automatically handles missing values and data types.
